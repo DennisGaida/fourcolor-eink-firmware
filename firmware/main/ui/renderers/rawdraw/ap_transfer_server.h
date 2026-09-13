@@ -15,6 +15,8 @@
 
 #include <string>
 #include <functional>
+#include <vector>
+#include <cstdint>
 #include <esp_http_server.h>
 #include <esp_netif.h>
 #include <freertos/FreeRTOS.h>
@@ -64,6 +66,17 @@ public:
     void SetPhotosChangedCallback(std::function<void()> callback);
     void SetShowPhotoCallback(std::function<bool(const std::string& photo_id)> callback);
 
+    // Debug/dev only: raw framebuffer capture for the /screenshot endpoint,
+    // used by the host-side screenshot.py to pull real on-device renders
+    // during iteration instead of flashing + photographing the panel.
+    // Callback returns {width, height, raw 2bpp packed bytes}.
+    struct FramebufferSnapshot {
+        int width = 0;
+        int height = 0;
+        std::vector<uint8_t> data;
+    };
+    void SetScreenshotCallback(std::function<FramebufferSnapshot()> callback);
+
 private:
     enum class TransferMode {
         kNone,
@@ -84,6 +97,7 @@ private:
     std::function<void(int slideshow_interval_minutes)> settings_changed_callback_;
     std::function<void()> photos_changed_callback_;
     std::function<bool(const std::string& photo_id)> show_photo_callback_;
+    std::function<FramebufferSnapshot()> screenshot_callback_;
 
     bool StartAccessPoint();
     const std::string& GetApIp() const { return ap_ip_; }
@@ -100,7 +114,8 @@ private:
     static esp_err_t PhotoMetaHandler(httpd_req_t* req);
     static esp_err_t PhotoMoveHandler(httpd_req_t* req);
     static esp_err_t PhotoShowHandler(httpd_req_t* req);
-    
+    static esp_err_t ScreenshotHandler(httpd_req_t* req);
+
     // Notify state change
     void NotifyState(ServerState state, const std::string& message);
     

@@ -515,7 +515,7 @@ bool ApTransferServer::StartAccessPoint() {
 
 bool ApTransferServer::StartHttpServer() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 12;
+    config.max_uri_handlers = 14;
     config.max_open_sockets = 4;
     config.recv_wait_timeout = 30;  // Large images take time
     config.send_wait_timeout = 10;
@@ -616,6 +616,14 @@ bool ApTransferServer::StartHttpServer() {
         .user_ctx = this
     };
     if (httpd_register_uri_handler(server_, &photo_show_uri) != ESP_OK) return false;
+
+    httpd_uri_t screenshot_uri = {
+        .uri = "/screenshot",
+        .method = HTTP_GET,
+        .handler = ScreenshotHandler,
+        .user_ctx = this
+    };
+    if (httpd_register_uri_handler(server_, &screenshot_uri) != ESP_OK) return false;
 
     ESP_LOGI(kTag, "HTTP server started at http://%s/", ap_ip_.c_str());
     return true;
@@ -1027,6 +1035,39 @@ void ApTransferServer::SetPhotosChangedCallback(std::function<void()> callback) 
 
 void ApTransferServer::SetShowPhotoCallback(std::function<bool(const std::string&)> callback) {
     show_photo_callback_ = std::move(callback);
+}
+
+void ApTransferServer::SetScreenshotCallback(std::function<FramebufferSnapshot()> callback) {
+    screenshot_callback_ = std::move(callback);
+}
+
+esp_err_t ApTransferServer::ScreenshotHandler(httpd_req_t* req) {
+    auto* self = static_cast<ApTransferServer*>(req->user_ctx);
+    if (!self || !self->screenshot_callback_) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Screenshot not available");
+        return ESP_FAIL;
+    }
+
+    FramebufferSnapshot snap = self->screenshot_callback_();
+    if (snap.data.empty()) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Empty framebuffer");
+        return ESP_FAIL;
+    }
+
+    // 4-byte header (width, height as uint16_t LE) + raw packed 2bpp bytes,
+    // decoded host-side by server/screenshot.py.
+    uint8_t header[4];
+    header[0] = static_cast<uint8_t>(snap.width & 0xFF);
+    header[1] = static_cast<uint8_t>((snap.width >> 8) & 0xFF);
+    header[2] = static_cast<uint8_t>(snap.height & 0xFF);
+    header[3] = static_cast<uint8_t>((snap.height >> 8) & 0xFF);
+
+    httpd_resp_set_type(req, "application/octet-stream");
+    httpd_resp_send_chunk(req, reinterpret_cast<const char*>(header), sizeof(header));
+    httpd_resp_send_chunk(req, reinterpret_cast<const char*>(snap.data.data()),
+                          static_cast<ssize_t>(snap.data.size()));
+    httpd_resp_send_chunk(req, nullptr, 0);
+    return ESP_OK;
 }
 
 }  // namespace rawdraw

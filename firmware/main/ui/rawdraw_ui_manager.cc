@@ -320,6 +320,22 @@ RawDrawUiManager::RawDrawUiManager()
     ap_transfer_server_->SetShowPhotoCallback([this](const std::string& photo_id) {
         return ShowPhotoById(photo_id);
     });
+    ap_transfer_server_->SetScreenshotCallback([this]() -> rawdraw::ApTransferServer::FramebufferSnapshot {
+        rawdraw::ApTransferServer::FramebufferSnapshot snap;
+        if (!lcd_) return snap;
+        auto* fb = lcd_->GetFramebuffer();
+        if (!fb) return snap;
+        snap.width = width_;
+        snap.height = height_;
+        const size_t bytes_per_row = (static_cast<size_t>(width_) * 2 + 7) / 8;
+        const size_t total_bytes = bytes_per_row * static_cast<size_t>(height_);
+        snap.data.resize(total_bytes);
+        auto* mutex = lcd_->GetMutex();
+        if (mutex) xSemaphoreTake(mutex, portMAX_DELAY);
+        memcpy(snap.data.data(), fb, total_bytes);
+        if (mutex) xSemaphoreGive(mutex);
+        return snap;
+    });
 
     // Initialize status bar defaults
     status_bar_data_.page_title = GetPageTitle(RawDrawPageId::Gallery);
