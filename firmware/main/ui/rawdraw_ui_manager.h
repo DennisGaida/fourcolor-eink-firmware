@@ -20,6 +20,7 @@
 #include "ui/renderers/rawdraw/photo_gallery.h"
 #include "ui/renderers/rawdraw/photo_detail_renderer.h"
 #include "ui/renderers/rawdraw/weather_renderer.h"
+#include "ui/renderers/rawdraw/busy_light_renderer.h"
 #include "ui/renderers/rawdraw/weather_detail_renderer.h"
 #include "ui/renderers/rawdraw/news_renderer.h"
 #include "ui/renderers/rawdraw/lifebar_renderer.h"
@@ -31,6 +32,7 @@
 #include "ui/renderers/rawdraw/calendar_renderer.h"
 #include "ui/renderers/rawdraw/ap_transfer_renderer.h"
 #include "ui/renderers/rawdraw/ap_transfer_server.h"
+#include "common/presence_types.h"
 #include "rawdraw/rawdraw.h"
 #include "rawdraw/theme.h"
 #include "rawdraw/style.h"
@@ -76,6 +78,7 @@ enum class RawDrawPageId {
     FontDebug = 15,
     FontMetrics = 16,
     APTransfer = 17,
+    BusyLight = 18,
     Count,
 };
 
@@ -313,6 +316,16 @@ public:
     void SetWifiBlinking(bool blinking);
 
     /**
+     * @brief Update busy-light presence status (calendar events, in-call, webcam)
+     */
+    void UpdatePresenceStatus(const PresenceStatus& status);
+
+    /**
+     * @brief Get busy-light presence status
+     */
+    PresenceStatus GetPresenceStatus() const;
+
+    /**
      * @brief Toggle lifebar page visibility (controlled via settings)
      */
     void SetLifeBarVisible(bool visible);
@@ -329,6 +342,7 @@ public:
     rawdraw::PhotoGalleryRenderer* GetPhotoGalleryRenderer() { return photo_gallery_renderer_.get(); }
     rawdraw::PhotoDetailRenderer* GetPhotoDetailRenderer() { return photo_detail_renderer_.get(); }
     rawdraw::WeatherRenderer* GetWeatherRenderer() { return weather_renderer_.get(); }
+    rawdraw::BusyLightRenderer* GetBusyLightRenderer() { return busy_light_renderer_.get(); }
     rawdraw::WeatherDetailRenderer* GetWeatherDetailRenderer() { return weather_detail_renderer_.get(); }
     rawdraw::NewsRenderer* GetNewsRenderer() { return news_renderer_.get(); }
     rawdraw::LifeBarRenderer* GetLifeBarRenderer() { return lifebar_renderer_.get(); }
@@ -429,7 +443,7 @@ private:
     int height_ = 300;
 
     // Current page
-    RawDrawPageId current_page_ = RawDrawPageId::Gallery;
+    RawDrawPageId current_page_ = RawDrawPageId::BusyLight;
 
     // Status bar
     RawDrawStatusBarData status_bar_data_;
@@ -443,6 +457,7 @@ private:
     std::unique_ptr<rawdraw::PhotoGalleryRenderer> photo_gallery_renderer_;
     std::unique_ptr<rawdraw::PhotoDetailRenderer> photo_detail_renderer_;
     std::unique_ptr<rawdraw::WeatherRenderer> weather_renderer_;
+    std::unique_ptr<rawdraw::BusyLightRenderer> busy_light_renderer_;
     std::unique_ptr<rawdraw::WeatherDetailRenderer> weather_detail_renderer_;
     std::unique_ptr<rawdraw::NewsRenderer> news_renderer_;
     std::unique_ptr<rawdraw::LifeBarRenderer> lifebar_renderer_;
@@ -505,7 +520,7 @@ private:
     void RestoreQuickSwitchBacking(uint8_t* fb);
     void RedrawQuickSwitchOnly(uint8_t* fb);
     void RefreshRect(const rawdraw::Rect& rect, bool urgent = false);
-    static const std::array<QuickSwitchItem, 2>& GetQuickSwitchItems();
+    static const std::array<QuickSwitchItem, 3>& GetQuickSwitchItems();
     void MarkAllRenderersFullRefresh();
 };
 

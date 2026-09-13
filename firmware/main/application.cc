@@ -4,6 +4,7 @@
 #include "boards/zectrix-s3-epaper-4.2/config.h"
 #include "board.h"
 #include "common/photo_storage.h"
+#include "common/presence_api.h"
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
@@ -30,6 +31,44 @@ constexpr int kSettingsSlideshowIndex = 4;
 constexpr int kSettingsWifiIndex = 6;
 constexpr int kSettingsHttpServerIndex = 7;
 constexpr int kSettingsLanIpIndex = 8;
+constexpr ui::RawDrawPageId kDefaultIdlePage = ui::RawDrawPageId::BusyLight;
+constexpr char kPresenceBridgeEndpoint[] = "http://presence-bridge.local:8080/presence";
+
+// TODO(busy-light): remove once server/presence_bridge.py is deployed and
+// kPresenceBridgeEndpoint points at a real instance. Fixed HH:MM schedule
+// (not relative to "now") so the busy-light page has something representative
+// to render immediately at boot, before WiFi/the bridge are reachable; the
+// status chip and now-line still evaluate against the real current time, so
+// the page updates live even though the schedule itself is static.
+constexpr bool kUseMockPresenceData = true;
+
+PresenceStatus BuildMockPresenceStatus() {
+    PresenceStatus status;
+    status.in_call = false;
+    status.webcam_active = true;
+    status.last_updated_unix = time(nullptr);
+    status.valid = true;
+
+    auto add_event = [&status](int start_h, int start_m, int end_h, int end_m, const char* title) {
+        PresenceEvent ev;
+        ev.start_minutes = start_h * 60 + start_m;
+        ev.end_minutes = end_h * 60 + end_m;
+        ev.title = title;
+        status.events.push_back(std::move(ev));
+    };
+
+    add_event(7, 30, 8, 0, "Standup prep");
+    add_event(9, 0, 9, 30, "Standup");
+    add_event(10, 0, 11, 30, "Design review");
+    add_event(11, 0, 11, 15, "Quick sync");         // overlaps Design review
+    add_event(13, 0, 14, 0, "Lunch with client");
+    add_event(15, 0, 16, 30, "Sprint planning");
+    add_event(16, 0, 16, 15, "1:1 with manager");    // overlaps Sprint planning
+    add_event(16, 10, 16, 20, "Recruiter call");     // triggers "+N more" overflow
+    add_event(17, 0, 17, 30, "Wrap-up");
+
+    return status;
+}
 
 std::string FormatMinutesLabel(int minutes) {
     if (minutes <= 0) return i18n::Tr("关闭", "Off");
@@ -108,6 +147,19 @@ bool IsLocalHttpServiceRunning(const ui::RawDrawUiManager* manager) {
     return manager != nullptr && manager->IsHttpServerRunning();
 }
 
+void StartPresenceApiOnce() {
+    static bool s_started = false;
+    if (s_started) return;
+    s_started = true;
+
+    presence_api_init(kPresenceBridgeEndpoint, [](const PresenceStatus& status) {
+        auto* manager = Application::GetInstance().GetRawDrawUiManager();
+        if (manager) {
+            manager->UpdatePresenceStatus(status);
+        }
+    });
+}
+
 }  // namespace
 
 Application::Application() = default;
@@ -148,6 +200,9 @@ void Application::Initialize() {
 
     auto* lcd = static_cast<CustomLcdDisplay*>(display);
     rawdraw_ui_manager_ = std::make_unique<ui::RawDrawUiManager>();
+    if (kUseMockPresenceData) {
+        rawdraw_ui_manager_->UpdatePresenceStatus(BuildMockPresenceStatus());
+    }
     rawdraw_ui_manager_->Init(lcd, [lcd](const rawdraw::Rect&, bool urgent) {
         if (urgent) {
             lcd->RequestUrgentFullRefresh();
@@ -305,6 +360,7 @@ void Application::Initialize() {
                 ESP_LOGI(kTag, "WiFi connected: %s", data.c_str());
                 wifi_connected_.store(true, std::memory_order_release);
                 StartSntpClockSyncOnce();
+                StartPresenceApiOnce();
                 if (rawdraw_ui_manager_ && !rawdraw_ui_manager_->IsLanHttpServerRunning()) {
                     const std::string ip = data.empty() ? WifiManager::GetInstance().GetIpAddress() : data;
                     if (!ip.empty()) {
@@ -321,7 +377,7 @@ void Application::Initialize() {
                     rawdraw_ui_manager_->GetCurrentPage() == ui::RawDrawPageId::APTransfer &&
                     !rawdraw_ui_manager_->IsApTransferModeRunning()) {
                     ESP_LOGI(kTag, "WiFi connected while config page is visible, returning to gallery");
-                    rawdraw_ui_manager_->SwitchPage(ui::RawDrawPageId::Gallery);
+                    rawdraw_ui_manager_->SwitchPage(kDefaultIdlePage);
                 }
                 UpdateStatusBarForUi();
                 ArmSyncSleepTimer();
@@ -355,7 +411,7 @@ void Application::Initialize() {
                     rawdraw_ui_manager_->GetCurrentPage() == ui::RawDrawPageId::APTransfer &&
                     !rawdraw_ui_manager_->IsApTransferModeRunning()) {
                     ESP_LOGI(kTag, "WiFi config AP exited, returning to gallery");
-                    rawdraw_ui_manager_->SwitchPage(ui::RawDrawPageId::Gallery);
+                    rawdraw_ui_manager_->SwitchPage(kDefaultIdlePage);
                 }
                 wifi_connected_.store(WifiManager::GetInstance().IsConnected(),
                                       std::memory_order_release);
@@ -408,7 +464,7 @@ void Application::OnUpLongPress() {
     if (rawdraw_ui_manager_ &&
         rawdraw_ui_manager_->GetCurrentPage() == ui::RawDrawPageId::Settings) {
         ESP_LOGI(kTag, "UP long press - leaving settings");
-        rawdraw_ui_manager_->SwitchPage(ui::RawDrawPageId::Gallery);
+        rawdraw_ui_manager_->SwitchPage(kDefaultIdlePage);
     }
 }
 
@@ -441,7 +497,7 @@ void Application::OnBootLongPress() {
     if (WifiManager::GetInstance().IsConfigMode()) {
         ESP_LOGI(kTag, "BOOT long press - exiting WiFi config AP");
         if (rawdraw_ui_manager_) {
-            rawdraw_ui_manager_->SwitchPage(ui::RawDrawPageId::Gallery);
+            rawdraw_ui_manager_->SwitchPage(kDefaultIdlePage);
         }
         WifiManager::GetInstance().StartStation();
         return;

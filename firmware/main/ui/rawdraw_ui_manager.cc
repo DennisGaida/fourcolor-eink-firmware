@@ -17,6 +17,7 @@
 #include "lvgl.h"
 #include "settings.h"
 #include "i18n.h"
+#include "common/presence_api.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -215,6 +216,7 @@ const char* RawDrawUiManager::GetPageTitle(RawDrawPageId page) {
         case RawDrawPageId::FontDebug:  return Tr("对齐测试", "Alignment Test");
         case RawDrawPageId::FontMetrics: return Tr("字体指标", "Font Metrics");
         case RawDrawPageId::APTransfer: return Tr("传图模式", "Transfer Mode");
+        case RawDrawPageId::BusyLight: return Tr("忙碌灯", "Busy Light");
         default:               return Tr("未知", "Unknown");
     }
 }
@@ -227,7 +229,7 @@ RawDrawUiManager::RawDrawUiManager()
     : lcd_(nullptr)
     , width_(Style::kScreenWidth)
     , height_(Style::kScreenHeight)
-    , current_page_(RawDrawPageId::Gallery)
+    , current_page_(RawDrawPageId::BusyLight)
     , refresh_cb_(nullptr)
     , full_refresh_pending_(false)
     , clock_(rawdraw::kClockX, rawdraw::kClockY, &font_zectrix_16_1)
@@ -241,6 +243,7 @@ RawDrawUiManager::RawDrawUiManager()
     photo_gallery_renderer_ = std::make_unique<rawdraw::PhotoGalleryRenderer>();
     photo_detail_renderer_ = std::make_unique<rawdraw::PhotoDetailRenderer>();
     weather_renderer_ = std::make_unique<rawdraw::WeatherRenderer>();
+    busy_light_renderer_ = std::make_unique<rawdraw::BusyLightRenderer>();
     weather_detail_renderer_ = std::make_unique<rawdraw::WeatherDetailRenderer>();
     news_renderer_ = std::make_unique<rawdraw::NewsRenderer>();
     lifebar_renderer_ = std::make_unique<rawdraw::LifeBarRenderer>();
@@ -338,7 +341,7 @@ RawDrawUiManager::RawDrawUiManager()
     });
 
     // Initialize status bar defaults
-    status_bar_data_.page_title = GetPageTitle(RawDrawPageId::Gallery);
+    status_bar_data_.page_title = GetPageTitle(RawDrawPageId::BusyLight);
     status_bar_data_.wifi_connected = false;
     status_bar_data_.server_connected = false;
     status_bar_data_.battery_level = -1;
@@ -572,6 +575,7 @@ rawdraw::PageRenderer* RawDrawUiManager::GetRendererForPage(RawDrawPageId page) 
         case RawDrawPageId::FontDebug:  return font_debug_renderer_.get();
         case RawDrawPageId::FontMetrics: return font_metrics_renderer_.get();
         case RawDrawPageId::APTransfer: return ap_transfer_renderer_.get();
+        case RawDrawPageId::BusyLight: return busy_light_renderer_.get();
         default:               return nullptr;
     }
 }
@@ -662,8 +666,9 @@ bool RawDrawUiManager::TryDisplayCurrentPhotoRaw4Color() {
     return shown;
 }
 
-const std::array<RawDrawUiManager::QuickSwitchItem, 2>& RawDrawUiManager::GetQuickSwitchItems() {
-    static const std::array<QuickSwitchItem, 2> kItems = {{
+const std::array<RawDrawUiManager::QuickSwitchItem, 3>& RawDrawUiManager::GetQuickSwitchItems() {
+    static const std::array<QuickSwitchItem, 3> kItems = {{
+        {RawDrawPageId::BusyLight, FA_SETTINGS_CLOCK},
         {RawDrawPageId::Gallery, FA_SETTINGS_IMAGE},
         {RawDrawPageId::Settings, FA_SETTINGS_GEAR},
 #if 0
@@ -1697,6 +1702,25 @@ rawdraw::WifiStatus RawDrawUiManager::GetWifiStatus() const {
         return wifi_renderer_->GetStatus();
     }
     return {};
+}
+
+// ============================================================
+// Busy-light presence page data updates
+// ============================================================
+
+void RawDrawUiManager::UpdatePresenceStatus(const PresenceStatus& status) {
+    if (!busy_light_renderer_) return;
+
+    busy_light_renderer_->Update(status);
+
+    if (current_page_ == RawDrawPageId::BusyLight) {
+        RefreshActivePage(false);
+    }
+}
+
+PresenceStatus RawDrawUiManager::GetPresenceStatus() const {
+    const PresenceStatus* last = presence_api_get_last_data();
+    return last ? *last : PresenceStatus{};
 }
 
 void RawDrawUiManager::SetWifiBlinking(bool blinking) {
