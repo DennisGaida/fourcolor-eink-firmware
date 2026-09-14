@@ -515,7 +515,7 @@ bool ApTransferServer::StartAccessPoint() {
 
 bool ApTransferServer::StartHttpServer() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.max_uri_handlers = 14;
+    config.max_uri_handlers = 15;
     config.max_open_sockets = 4;
     config.recv_wait_timeout = 30;  // Large images take time
     config.send_wait_timeout = 10;
@@ -624,6 +624,14 @@ bool ApTransferServer::StartHttpServer() {
         .user_ctx = this
     };
     if (httpd_register_uri_handler(server_, &screenshot_uri) != ESP_OK) return false;
+
+    httpd_uri_t button_uri = {
+        .uri = "/button",
+        .method = HTTP_GET,
+        .handler = ButtonHandler,
+        .user_ctx = this
+    };
+    if (httpd_register_uri_handler(server_, &button_uri) != ESP_OK) return false;
 
     ESP_LOGI(kTag, "HTTP server started at http://%s/", ap_ip_.c_str());
     return true;
@@ -1068,6 +1076,32 @@ esp_err_t ApTransferServer::ScreenshotHandler(httpd_req_t* req) {
                           static_cast<ssize_t>(snap.data.size()));
     httpd_resp_send_chunk(req, nullptr, 0);
     return ESP_OK;
+}
+
+void ApTransferServer::SetButtonInjectCallback(std::function<void(const std::string&)> callback) {
+    button_inject_callback_ = std::move(callback);
+}
+
+esp_err_t ApTransferServer::ButtonHandler(httpd_req_t* req) {
+    auto* self = static_cast<ApTransferServer*>(req->user_ctx);
+
+    char query[32] = {};
+    char type[24] = {};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        httpd_query_key_value(query, "type", type, sizeof(type));
+    }
+
+    if (!self || !self->button_inject_callback_ || type[0] == '\0') {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing ?type= or handler unavailable");
+        return ESP_FAIL;
+    }
+
+    self->button_inject_callback_(type);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    static const char kBody[] = "{\"ok\":true}";
+    return httpd_resp_send(req, kBody, sizeof(kBody) - 1);
 }
 
 }  // namespace rawdraw

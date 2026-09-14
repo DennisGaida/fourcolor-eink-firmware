@@ -77,6 +77,11 @@ public:
     };
     void SetScreenshotCallback(std::function<FramebufferSnapshot()> callback);
 
+    // Debug/dev only: inject a button event over HTTP (?type=boot_click, etc.)
+    // so the dev-loop can flip pages/toggle views without a hand on the
+    // physical board — see server/press_button.py.
+    void SetButtonInjectCallback(std::function<void(const std::string& type)> callback);
+
 private:
     enum class TransferMode {
         kNone,
@@ -98,6 +103,7 @@ private:
     std::function<void()> photos_changed_callback_;
     std::function<bool(const std::string& photo_id)> show_photo_callback_;
     std::function<FramebufferSnapshot()> screenshot_callback_;
+    std::function<void(const std::string& type)> button_inject_callback_;
 
     bool StartAccessPoint();
     const std::string& GetApIp() const { return ap_ip_; }
@@ -115,6 +121,7 @@ private:
     static esp_err_t PhotoMoveHandler(httpd_req_t* req);
     static esp_err_t PhotoShowHandler(httpd_req_t* req);
     static esp_err_t ScreenshotHandler(httpd_req_t* req);
+    static esp_err_t ButtonHandler(httpd_req_t* req);
 
     // Notify state change
     void NotifyState(ServerState state, const std::string& message);

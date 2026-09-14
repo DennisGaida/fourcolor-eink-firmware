@@ -26,6 +26,7 @@
 #include <cstdio>
 #include <string>
 #include <ctime>
+#include <unordered_map>
 
 static const char* kTag = "RawDrawUiManager";
 static constexpr const char* kRawDrawThemeNvsKey = "rawdraw_theme";
@@ -338,6 +339,26 @@ RawDrawUiManager::RawDrawUiManager()
         memcpy(snap.data.data(), fb, total_bytes);
         if (mutex) xSemaphoreGive(mutex);
         return snap;
+    });
+
+    ap_transfer_server_->SetButtonInjectCallback([this](const std::string& type) {
+        static const std::unordered_map<std::string, rawdraw::ButtonEvent::Type> kTypes = {
+            {"boot_click", rawdraw::ButtonEvent::kBootClick},
+            {"boot_double_click", rawdraw::ButtonEvent::kBootDoubleClick},
+            {"boot_long_press", rawdraw::ButtonEvent::kBootLongPress},
+            {"up_click", rawdraw::ButtonEvent::kUpClick},
+            {"up_double_click", rawdraw::ButtonEvent::kUpDoubleClick},
+            {"up_long_press", rawdraw::ButtonEvent::kUpLongPress},
+            {"down_click", rawdraw::ButtonEvent::kDownClick},
+            {"down_double_click", rawdraw::ButtonEvent::kDownDoubleClick},
+            {"down_long_press", rawdraw::ButtonEvent::kDownLongPress},
+        };
+        auto it = kTypes.find(type);
+        if (it == kTypes.end()) {
+            ESP_LOGW(kTag, "Unknown injected button type: %s", type.c_str());
+            return;
+        }
+        HandleInput({it->second});
     });
 
     // Initialize status bar defaults
