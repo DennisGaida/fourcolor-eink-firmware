@@ -54,8 +54,10 @@ struct EventLayout {
     int column;
 };
 
-// TODO(busy-light): flip to false once the real presence bridge is wired up
-// (see kUseMockPresenceData in application.cc — same idea, same off-switch).
+// TODO(busy-light): flip to false once there's a reason to see the page at
+// real wall-clock time during dev sessions (calendar data itself now comes
+// from a real fetch — see presence_api_init in application.cc — this flag
+// is only about which time-of-day the page renders against).
 // The RTC syncs correctly, but real wall-clock time is rarely inside
 // business hours during a design/mocking session, which left the zoomed
 // detail view's window and now-marker with nothing interesting to show.

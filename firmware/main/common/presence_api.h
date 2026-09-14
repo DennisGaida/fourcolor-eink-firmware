@@ -1,15 +1,24 @@
 /**
  * @file presence_api.h
- * @brief HTTP client for the office-door busy-light presence bridge.
+ * @brief HTTP client for the busy-light presence contract.
  *
  * Mirrors weather_api.h's shape: esp_http_client GET + cJSON parse +
- * periodic esp_timer refresh + callback delivery. See server/presence_bridge.py
- * for the expected JSON contract.
+ * periodic esp_timer refresh + callback delivery. The contract is split
+ * into two independently-polled resources because they change at very
+ * different rates — see server/mock_presence_server.py for the JSON shapes:
+ *
+ *   GET <endpoint>/calendar/today  — today's events, polled every 20 min
+ *   GET <endpoint>/live            — isPresenting/isInCall/isWebcamActive,
+ *                                     polled every 90s
+ *
+ * Both are merged into a single PresenceStatus, so callers don't need to
+ * know about the split. On fetch failure or a field missing from a
+ * response, the previous value for that field is kept (last-known-good),
+ * never blanked.
  *
  * Usage:
- * 1. presence_api_init("http://bridge.local:8080/presence", callback)
- * 2. Callback receives PresenceStatus on every successful fetch
- * 3. Timer triggers 5-minute auto-refresh
+ * 1. presence_api_init("http://bridge-host:8080", callback)
+ * 2. Callback receives PresenceStatus on every successful fetch of either resource
  */
 
 #ifndef PRESENCE_API_H
@@ -22,17 +31,18 @@
 using PresenceCallback = std::function<void(const PresenceStatus&)>;
 
 /**
- * @brief Initialize the presence API client and start the 5-minute refresh timer.
+ * @brief Initialize the presence API client and start the refresh timers.
  *
- * @param endpoint Full URL of the presence bridge endpoint
+ * @param endpoint Base URL of the presence server, no trailing slash or path
+ *                 (e.g. "http://192.168.178.37:8080")
  * @param callback Function called on every successful fetch
  */
 void presence_api_init(const char* endpoint, PresenceCallback callback);
 
 /**
- * @brief Trigger a manual presence fetch.
+ * @brief Trigger a manual fetch of both resources.
  *
- * @return true if request started, false if already in progress or not initialized
+ * @return true if requests started, false if already in progress or not initialized
  */
 bool presence_api_fetch_now();
 

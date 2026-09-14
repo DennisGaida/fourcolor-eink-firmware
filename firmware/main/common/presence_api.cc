@@ -3,9 +3,10 @@
  * @brief Presence bridge API client implementation
  *
  * Mirrors weather_api.cc's structure: static file-scope state, esp_http_client
- * GET, cJSON parse, esp_timer periodic refresh (5 min instead of weather's 1h).
- * On fetch failure or malformed response, keeps last-known-good data instead
- * of blanking (see server/presence_bridge.py for the JSON contract).
+ * GET, cJSON parse, esp_timer periodic refresh. Two timers instead of one —
+ * see presence_api.h and server/mock_presence_server.py for why the contract
+ * is split into /calendar/today (slow) and /live (fast). On fetch failure or
+ * malformed/partial response, keeps last-known-good data instead of blanking.
  */
 
 #include "presence_api.h"
@@ -25,16 +26,24 @@ static const char* kTag = "PresenceApi";
 static const char* kSettingsNamespace = "presence";
 static const char* kEndpointKey = "endpoint";
 
+// /live changes second-to-second in principle, but the e-ink panel takes
+// 15-25s to refresh and locks out input during that, so sub-minute polling
+// wouldn't be visibly faster. /calendar/today is near-static within a day.
+static constexpr int64_t kLivePollIntervalUs = 90LL * 1000000LL;            // 90s
+static constexpr int64_t kCalendarPollIntervalUs = 20LL * 60LL * 1000000LL;  // 20min
+
 // ============================================================
 // Static state
 // ============================================================
 
-static std::string s_endpoint;
+static std::string s_endpoint;  // base URL, no trailing slash or path
 static PresenceCallback s_callback;
 static bool s_initialized = false;
-static bool s_in_progress = false;
+static bool s_live_in_progress = false;
+static bool s_calendar_in_progress = false;
 static PresenceStatus s_last_data;
-static esp_timer_handle_t s_timer = nullptr;
+static esp_timer_handle_t s_live_timer = nullptr;
+static esp_timer_handle_t s_calendar_timer = nullptr;
 
 // ============================================================
 // Time parsing
@@ -58,38 +67,22 @@ static PresenceEventTier ParseTier(const char* text) {
 }
 
 // ============================================================
-// JSON parsing
+// JSON parsing — one function per resource, each only touches the fields
+// its resource owns so a failed/partial fetch of one never blanks the other.
 // ============================================================
 
-static bool ParsePresenceJson(const char* json, PresenceStatus* out) {
+static bool ParseCalendarJson(const char* json, PresenceStatus* out) {
     if (!json || !out) return false;
 
     cJSON* root = cJSON_Parse(json);
     if (!root) {
-        ESP_LOGE(kTag, "Failed to parse JSON");
+        ESP_LOGE(kTag, "Failed to parse /calendar/today JSON");
         return false;
     }
-
-    cJSON* status_item = cJSON_GetObjectItem(root, "status");
-    const char* status = cJSON_IsString(status_item) ? status_item->valuestring : nullptr;
-    if (!status || strcmp(status, "ok") != 0) {
-        ESP_LOGE(kTag, "Bridge status != ok: %s", status ? status : "null");
-        cJSON_Delete(root);
-        return false;
-    }
-
-    cJSON* in_call = cJSON_GetObjectItem(root, "in_call");
-    out->in_call = cJSON_IsTrue(in_call);
-
-    cJSON* webcam = cJSON_GetObjectItem(root, "webcam_active");
-    out->webcam_active = cJSON_IsTrue(webcam);
-
-    cJSON* presenting = cJSON_GetObjectItem(root, "presenting");
-    out->presenting = cJSON_IsTrue(presenting);
 
     cJSON* events = cJSON_GetObjectItem(root, "events");
-    out->events.clear();
     if (cJSON_IsArray(events)) {
+        std::vector<PresenceEvent> parsed;
         cJSON* item = nullptr;
         cJSON_ArrayForEach(item, events) {
             cJSON* start = cJSON_GetObjectItem(item, "start");
@@ -105,11 +98,40 @@ static bool ParsePresenceJson(const char* json, PresenceStatus* out) {
             ev.end_minutes = end_min;
             ev.title = (cJSON_IsString(title) && title->valuestring) ? title->valuestring : "";
             ev.tier = ParseTier(cJSON_IsString(tier) ? tier->valuestring : nullptr);
-            out->events.push_back(std::move(ev));
+            parsed.push_back(std::move(ev));
         }
+        std::sort(parsed.begin(), parsed.end(),
+                  [](const PresenceEvent& a, const PresenceEvent& b) { return a.start_minutes < b.start_minutes; });
+        out->events = std::move(parsed);
     }
-    std::sort(out->events.begin(), out->events.end(),
-              [](const PresenceEvent& a, const PresenceEvent& b) { return a.start_minutes < b.start_minutes; });
+    // No "events" key at all (vs. an explicit empty array) — leave
+    // out->events untouched rather than treating a malformed/partial
+    // response as "no events today".
+
+    out->last_updated_unix = time(nullptr);
+    out->valid = true;
+
+    cJSON_Delete(root);
+    return true;
+}
+
+static bool ParseLiveJson(const char* json, PresenceStatus* out) {
+    if (!json || !out) return false;
+
+    cJSON* root = cJSON_Parse(json);
+    if (!root) {
+        ESP_LOGE(kTag, "Failed to parse /live JSON");
+        return false;
+    }
+
+    cJSON* presenting = cJSON_GetObjectItem(root, "isPresenting");
+    if (cJSON_IsBool(presenting)) out->presenting = cJSON_IsTrue(presenting);
+
+    cJSON* in_call = cJSON_GetObjectItem(root, "isInCall");
+    if (cJSON_IsBool(in_call)) out->in_call = cJSON_IsTrue(in_call);
+
+    cJSON* webcam = cJSON_GetObjectItem(root, "isWebcamActive");
+    if (cJSON_IsBool(webcam)) out->webcam_active = cJSON_IsTrue(webcam);
 
     out->last_updated_unix = time(nullptr);
     out->valid = true;
@@ -139,12 +161,12 @@ static esp_err_t HttpEventHandler(esp_http_client_event_t* evt) {
     return ESP_OK;
 }
 
-static bool HttpGet(const char* url) {
+static bool HttpGet(const std::string& url) {
     s_response_len = 0;
     memset(s_response_buf, 0, sizeof(s_response_buf));
 
     esp_http_client_config_t config = {};
-    config.url = url;
+    config.url = url.c_str();
     config.method = HTTP_METHOD_GET;
     config.event_handler = HttpEventHandler;
     config.timeout_ms = 10000;
@@ -165,7 +187,7 @@ static bool HttpGet(const char* url) {
 
     int status = esp_http_client_get_status_code(client);
     if (status != 200) {
-        ESP_LOGE(kTag, "HTTP status: %d for %s", status, url);
+        ESP_LOGE(kTag, "HTTP status: %d for %s", status, url.c_str());
         esp_http_client_cleanup(client);
         return false;
     }
@@ -175,44 +197,53 @@ static bool HttpGet(const char* url) {
     return true;
 }
 
-static void DoFetch(void* arg) {
-    (void)arg;
-    if (!s_initialized || s_in_progress) return;
+static std::string BuildUrl(const char* path) {
+    return s_endpoint + path;
+}
 
+static void DoFetchCalendar(void* arg) {
+    (void)arg;
+    if (!s_initialized || s_calendar_in_progress) return;
     if (s_endpoint.empty()) {
         ESP_LOGE(kTag, "Presence endpoint not set");
         return;
     }
 
-    s_in_progress = true;
-
-    ESP_LOGI(kTag, "Fetching presence: %s", s_endpoint.c_str());
-    PresenceStatus data;
-    if (!HttpGet(s_endpoint.c_str()) || !ParsePresenceJson(s_response_buf, &data)) {
-        // Keep last-known-good data on failure or malformed response.
-        ESP_LOGW(kTag, "Presence fetch failed, keeping last-known-good data");
-        s_in_progress = false;
+    s_calendar_in_progress = true;
+    const std::string url = BuildUrl("/calendar/today");
+    ESP_LOGI(kTag, "Fetching calendar: %s", url.c_str());
+    if (!HttpGet(url) || !ParseCalendarJson(s_response_buf, &s_last_data)) {
+        ESP_LOGW(kTag, "Calendar fetch failed, keeping last-known-good data");
+        s_calendar_in_progress = false;
         return;
     }
 
-    s_last_data = data;
-    ESP_LOGI(kTag, "Presence: in_call=%d webcam=%d events=%d",
-             data.in_call, data.webcam_active, static_cast<int>(data.events.size()));
-
-    if (s_callback) {
-        s_callback(data);
-    }
-
-    s_in_progress = false;
+    ESP_LOGI(kTag, "Calendar: events=%d", static_cast<int>(s_last_data.events.size()));
+    if (s_callback) s_callback(s_last_data);
+    s_calendar_in_progress = false;
 }
 
-// ============================================================
-// Timer callback
-// ============================================================
+static void DoFetchLive(void* arg) {
+    (void)arg;
+    if (!s_initialized || s_live_in_progress) return;
+    if (s_endpoint.empty()) {
+        ESP_LOGE(kTag, "Presence endpoint not set");
+        return;
+    }
 
-static void TimerCallback(void* arg) {
-    ESP_LOGD(kTag, "5-minute presence refresh triggered");
-    DoFetch(arg);
+    s_live_in_progress = true;
+    const std::string url = BuildUrl("/live");
+    ESP_LOGI(kTag, "Fetching live status: %s", url.c_str());
+    if (!HttpGet(url) || !ParseLiveJson(s_response_buf, &s_last_data)) {
+        ESP_LOGW(kTag, "Live fetch failed, keeping last-known-good data");
+        s_live_in_progress = false;
+        return;
+    }
+
+    ESP_LOGI(kTag, "Live: in_call=%d webcam=%d presenting=%d",
+             s_last_data.in_call, s_last_data.webcam_active, s_last_data.presenting);
+    if (s_callback) s_callback(s_last_data);
+    s_live_in_progress = false;
 }
 
 // ============================================================
@@ -229,33 +260,49 @@ void presence_api_init(const char* endpoint, PresenceCallback callback) {
     s_endpoint = settings.GetString(kEndpointKey, endpoint ? endpoint : "");
     s_callback = callback;
 
-    esp_timer_create_args_t timer_args = {
-        .callback = TimerCallback,
+    esp_timer_create_args_t live_timer_args = {
+        .callback = DoFetchLive,
         .arg = nullptr,
         .dispatch_method = ESP_TIMER_TASK,
-        .name = "presence_refresh",
+        .name = "presence_live",
         .skip_unhandled_events = true,
     };
-
-    if (esp_timer_create(&timer_args, &s_timer) == ESP_OK) {
-        esp_timer_start_periodic(s_timer, 5LL * 60LL * 1000000LL);
-        ESP_LOGI(kTag, "Timer started (5min interval)");
+    if (esp_timer_create(&live_timer_args, &s_live_timer) == ESP_OK) {
+        esp_timer_start_periodic(s_live_timer, kLivePollIntervalUs);
     } else {
-        ESP_LOGE(kTag, "Failed to create timer");
+        ESP_LOGE(kTag, "Failed to create live timer");
+    }
+
+    esp_timer_create_args_t calendar_timer_args = {
+        .callback = DoFetchCalendar,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "presence_calendar",
+        .skip_unhandled_events = true,
+    };
+    if (esp_timer_create(&calendar_timer_args, &s_calendar_timer) == ESP_OK) {
+        esp_timer_start_periodic(s_calendar_timer, kCalendarPollIntervalUs);
+    } else {
+        ESP_LOGE(kTag, "Failed to create calendar timer");
     }
 
     s_initialized = true;
 
-    DoFetch(nullptr);
+    DoFetchLive(nullptr);
+    DoFetchCalendar(nullptr);
 
-    ESP_LOGI(kTag, "Presence API initialized: endpoint=%s", s_endpoint.c_str());
+    ESP_LOGI(kTag, "Presence API initialized: endpoint=%s (live=%llds, calendar=%llds)",
+             s_endpoint.c_str(),
+             static_cast<long long>(kLivePollIntervalUs / 1000000LL),
+             static_cast<long long>(kCalendarPollIntervalUs / 1000000LL));
 }
 
 bool presence_api_fetch_now() {
     if (!s_initialized) return false;
-    if (s_in_progress) return false;
+    if (s_live_in_progress || s_calendar_in_progress) return false;
 
-    DoFetch(nullptr);
+    DoFetchLive(nullptr);
+    DoFetchCalendar(nullptr);
     return true;
 }
 
