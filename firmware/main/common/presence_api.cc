@@ -49,6 +49,14 @@ static int32_t ParseHhMm(const char* text) {
     return hh * 60 + mm;
 }
 
+// Unknown/missing tier defaults to internal — the least alarming reading.
+static PresenceEventTier ParseTier(const char* text) {
+    if (!text) return PresenceEventTier::kInternal;
+    if (strcmp(text, "customer") == 0) return PresenceEventTier::kCustomer;
+    if (strcmp(text, "leadership") == 0) return PresenceEventTier::kLeadership;
+    return PresenceEventTier::kInternal;
+}
+
 // ============================================================
 // JSON parsing
 // ============================================================
@@ -76,6 +84,9 @@ static bool ParsePresenceJson(const char* json, PresenceStatus* out) {
     cJSON* webcam = cJSON_GetObjectItem(root, "webcam_active");
     out->webcam_active = cJSON_IsTrue(webcam);
 
+    cJSON* presenting = cJSON_GetObjectItem(root, "presenting");
+    out->presenting = cJSON_IsTrue(presenting);
+
     cJSON* events = cJSON_GetObjectItem(root, "events");
     out->events.clear();
     if (cJSON_IsArray(events)) {
@@ -84,6 +95,7 @@ static bool ParsePresenceJson(const char* json, PresenceStatus* out) {
             cJSON* start = cJSON_GetObjectItem(item, "start");
             cJSON* end = cJSON_GetObjectItem(item, "end");
             cJSON* title = cJSON_GetObjectItem(item, "title");
+            cJSON* tier = cJSON_GetObjectItem(item, "tier");
             const int32_t start_min = ParseHhMm(cJSON_IsString(start) ? start->valuestring : nullptr);
             const int32_t end_min = ParseHhMm(cJSON_IsString(end) ? end->valuestring : nullptr);
             if (start_min < 0 || end_min < 0) continue;
@@ -92,6 +104,7 @@ static bool ParsePresenceJson(const char* json, PresenceStatus* out) {
             ev.start_minutes = start_min;
             ev.end_minutes = end_min;
             ev.title = (cJSON_IsString(title) && title->valuestring) ? title->valuestring : "";
+            ev.tier = ParseTier(cJSON_IsString(tier) ? tier->valuestring : nullptr);
             out->events.push_back(std::move(ev));
         }
     }

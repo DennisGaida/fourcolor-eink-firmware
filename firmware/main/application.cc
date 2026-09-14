@@ -46,26 +46,38 @@ PresenceStatus BuildMockPresenceStatus() {
     PresenceStatus status;
     status.in_call = false;
     status.webcam_active = true;
+    // Demo-only: shows the "Presenting — do not disturb" banner on the
+    // default face without needing a real screen-share signal wired up yet.
+    status.presenting = true;
     status.last_updated_unix = time(nullptr);
     status.valid = true;
 
-    auto add_event = [&status](int start_h, int start_m, int end_h, int end_m, const char* title) {
+    auto add_event = [&status](int start_h, int start_m, int end_h, int end_m, const char* title,
+                                PresenceEventTier tier = PresenceEventTier::kInternal) {
         PresenceEvent ev;
         ev.start_minutes = start_h * 60 + start_m;
         ev.end_minutes = end_h * 60 + end_m;
         ev.title = title;
+        ev.tier = tier;
         status.events.push_back(std::move(ev));
     };
 
-    add_event(7, 30, 8, 0, "Standup prep");
+    // Mirrors the "Busy Light Display" design doc's own example day
+    // (Standup / Acme Corp QBR / Board prep — CFO / Sprint planning /
+    // 1:1 with Sam) so the mock preview matches the reference mockup.
+    //
+    // Fixed slots, deliberately not "pinned to now": the RTC can report a
+    // stale-but->=2020 time at boot (retained across a quick reflash, before
+    // fresh SNTP overwrites it), which drifted a "pin to now" version of
+    // this event to a nonsensical slot. Use the renderer's UP/DOWN debug
+    // cycle (BusyLightRenderer::DebugTier) to preview a live leadership/
+    // customer/internal state on demand instead — it doesn't depend on
+    // wall-clock timing at all.
     add_event(9, 0, 9, 30, "Standup");
-    add_event(10, 0, 11, 30, "Design review");
-    add_event(11, 0, 11, 15, "Quick sync");         // overlaps Design review
-    add_event(13, 0, 14, 0, "Lunch with client");
-    add_event(15, 0, 16, 30, "Sprint planning");
-    add_event(16, 0, 16, 15, "1:1 with manager");    // overlaps Sprint planning
-    add_event(16, 10, 16, 20, "Recruiter call");     // triggers "+N more" overflow
-    add_event(17, 0, 17, 30, "Wrap-up");
+    add_event(10, 0, 11, 30, "Acme Corp — QBR", PresenceEventTier::kCustomer);
+    add_event(11, 45, 12, 15, "Board prep — CFO", PresenceEventTier::kLeadership);
+    add_event(13, 0, 14, 0, "Sprint planning");
+    add_event(15, 30, 16, 0, "1:1 with Sam");
 
     return status;
 }

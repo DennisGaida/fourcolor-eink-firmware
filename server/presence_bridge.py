@@ -10,11 +10,16 @@ Serves a single GET endpoint the ESP32 polls every 5 minutes:
       "generated_at": "2026-09-12T14:32:00+02:00",
       "in_call": false,
       "webcam_active": false,
+      "presenting": false,
       "events": [
-        {"start": "09:00", "end": "09:30", "title": "Standup"},
-        {"start": "10:00", "end": "11:30", "title": "Design review"}
+        {"start": "09:00", "end": "09:30", "title": "Standup", "tier": "internal"},
+        {"start": "10:00", "end": "11:30", "title": "Design review", "tier": "internal"}
       ]
     }
+
+`tier` is one of "internal" / "leadership" / "customer" (defaults to
+"internal" if omitted) and drives the door-fill style on the firmware's
+detail-face day grid.
 
 `start`/`end` are local "HH:MM" strings — no timezone math needed on-device.
 On any internal error this still returns HTTP 200 with "status" != "ok" so the
@@ -55,7 +60,23 @@ HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
 HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.webcam_active")
+HA_PRESENTING_SENSOR = os.environ.get("HA_PRESENTING_SENSOR", "")
 HA_CALENDAR_ENTITY = os.environ.get("HA_CALENDAR_ENTITY", "")
+# Comma-separated, case-insensitive substrings matched against the raw event
+# title (before --redact-titles strips it) to pick the door-fill tier the
+# firmware renders. No HA signal maps cleanly to "how important is this
+# meeting", so this is a keyword guess — tune the lists for your calendar.
+HA_CUSTOMER_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_CUSTOMER_KEYWORDS", "customer,client").split(",") if k.strip()]
+HA_LEADERSHIP_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_LEADERSHIP_KEYWORDS", "ceo,cfo,coo,leadership,board").split(",") if k.strip()]
+
+
+def classify_tier(title: str) -> str:
+    lowered = title.lower()
+    if any(k in lowered for k in HA_CUSTOMER_KEYWORDS):
+        return "customer"
+    if any(k in lowered for k in HA_LEADERSHIP_KEYWORDS):
+        return "leadership"
+    return "internal"
 
 
 def ha_get(path: str):
@@ -103,10 +124,12 @@ def fetch_calendar_events(redact_titles: bool) -> list:
             end = datetime.datetime.fromisoformat(item["end"]["dateTime"]).astimezone()
         except (KeyError, ValueError):
             continue  # skip all-day events (no dateTime, only date)
+        summary = item.get("summary", "Busy")
         events.append({
             "start": start.strftime("%H:%M"),
             "end": end.strftime("%H:%M"),
-            "title": "Busy" if redact_titles else item.get("summary", "Busy"),
+            "title": "Busy" if redact_titles else summary,
+            "tier": classify_tier(summary),
         })
     return events
 
@@ -117,6 +140,7 @@ def fetch_presence(redact_titles: bool) -> dict:
         "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
         "in_call": fetch_binary_sensor(HA_CALL_SENSOR),
         "webcam_active": fetch_binary_sensor(HA_WEBCAM_SENSOR),
+        "presenting": fetch_binary_sensor(HA_PRESENTING_SENSOR),
         "events": fetch_calendar_events(redact_titles),
     }
 
