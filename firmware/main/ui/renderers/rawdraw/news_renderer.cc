@@ -125,8 +125,8 @@ void NewsRenderer::Render(uint8_t* fb, int width, int height) {
 
     if (items_.empty()) {
         Modal modal;
-        modal.SetTitle(i18n::Tr("暂无新闻", "No News"));
-        modal.SetBodyFooter(i18n::Tr("等待数据", "Waiting for data"));
+        modal.SetTitle(i18n::Tr(i18n::StringId::kNoNews));
+        modal.SetBodyFooter(i18n::Tr(i18n::StringId::kWaitingForData));
         modal.CenterInScreen(width, height, 52);
         modal.Draw(fb, width, height);
     } else {
@@ -150,8 +150,8 @@ void NewsRenderer::Render(uint8_t* fb, int width, int height) {
     DrawStyledRoundRect(fb, width, height, {kNewsPanelX, kNewsFooterY, kNewsPanelW, kNewsFooterH},
                         Style::kBorderRadiusSM, panel_style);
     if (preview_open_) {
-        const char* boot_hint = footer_focus_ == 1 ? i18n::Tr("▶朗读", "▶Read") : i18n::Tr("▶关闭", "▶Close");
-        const char* select_hint = i18n::Tr("UP/DN 选按钮", "UP/DN select");
+        const char* boot_hint = footer_focus_ == 1 ? i18n::Tr(i18n::StringId::kRead) : i18n::Tr(i18n::StringId::kClose);
+        const char* select_hint = i18n::Tr(i18n::StringId::kUpDnSelect);
         DrawText(fb, width, 54,
                  InkCenteredTextTopY(font_, select_hint, kNewsFooterY + kNewsFooterH / 2, 0),
                  select_hint, font_, secondary);
@@ -159,8 +159,8 @@ void NewsRenderer::Render(uint8_t* fb, int width, int height) {
                  InkCenteredTextTopY(font_, boot_hint, kNewsFooterY + kNewsFooterH / 2, 0),
                  boot_hint, font_, text);
     } else {
-        const char* page_hint = i18n::Tr("UP/DN 翻页", "UP/DN page");
-        const char* open_hint = i18n::Tr("BOOT 打开", "BOOT open");
+        const char* page_hint = i18n::Tr(i18n::StringId::kUpDnPage);
+        const char* open_hint = i18n::Tr(i18n::StringId::kBootOpen);
         DrawText(fb, width, 54,
                  InkCenteredTextTopY(font_, page_hint, kNewsFooterY + kNewsFooterH / 2, 0),
                  page_hint, font_, secondary);
@@ -214,8 +214,8 @@ void NewsRenderer::DrawPreviewModal(uint8_t* fb, int width, int height) {
     const Color secondary = theme.ColorFor(ThemeToken::TextSecondary);
     const Color accent = theme.ColorFor(ThemeToken::Accent);
     Modal modal;
-    modal.SetTitle(i18n::Tr("新闻预览", "News Preview"));
-    modal.SetBodyFooter(footer_focus_ == 1 ? i18n::Tr("朗读", "Read") : i18n::Tr("关闭", "Close"));
+    modal.SetTitle(i18n::Tr(i18n::StringId::kNewsPreview));
+    modal.SetBodyFooter(footer_focus_ == 1 ? i18n::Tr(i18n::StringId::kRead2) : i18n::Tr(i18n::StringId::kClose2));
     modal.CenterInScreen(width, height, 36);
     modal.Draw(fb, width, height);
 

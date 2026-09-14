@@ -67,10 +67,10 @@ void EbookRenderer::RenderFileList(uint8_t* fb, int width, int height) {
     DrawStyledRect(fb, width, {0, Style::kStatusBarHeight + 1, width, height_ - Style::kStatusBarHeight - 1}, bg_style);
 
     if (files_.empty()) {
-        const char* hint = i18n::Tr("暂无TXT文件", "No TXT files");
+        const char* hint = i18n::Tr(i18n::StringId::kNoTxtFiles);
         int hint_w = MeasureTextWidth(hint, font_);
         DrawText(fb, width, (width - hint_w) / 2, kListY + 80, hint, font_, text);
-        const char* push_hint = i18n::Tr("推送TXT到设备", "Push a TXT file to device");
+        const char* push_hint = i18n::Tr(i18n::StringId::kPushATxtFileToDevice);
         DrawText(fb, width, (width - MeasureTextWidth(push_hint, font_)) / 2,
                  kListY + 110, push_hint, font_, secondary);
     } else {
@@ -97,13 +97,13 @@ void EbookRenderer::RenderFileList(uint8_t* fb, int width, int height) {
     }
 
     // Footer hints
-    const char* select_hint = i18n::Tr("BOOT 选择", "BOOT select");
+    const char* select_hint = i18n::Tr(i18n::StringId::kBootSelect);
     DrawStyledRoundRect(fb, width, height, {14, kFooterY, 110, kFooterH}, Style::kBorderRadiusSM, footer_style);
     DrawText(fb, width, 34,
              InkCenteredTextTopY(font_, select_hint, kFooterY + kFooterH / 2, 0),
              select_hint, font_, footer_style.fg);
 
-    const char* back_hint = i18n::Tr("双击返回", "Double-click back");
+    const char* back_hint = i18n::Tr(i18n::StringId::kDoubleClickBack);
     DrawStyledRoundRect(fb, width, height, {142, kFooterY, 130, kFooterH}, Style::kBorderRadiusSM, footer_style);
     DrawText(fb, width, 160,
              InkCenteredTextTopY(font_, back_hint, kFooterY + kFooterH / 2, 0),
@@ -135,12 +135,12 @@ void EbookRenderer::RenderReaderPage(uint8_t* fb, int width, int height, int con
     const Color secondary = theme.ColorFor(ThemeToken::TextSecondary);
 
     if (reader_content_.empty()) {
-        const char* empty_hint = i18n::Tr("文件为空或读取失败", "File is empty or failed to read");
+        const char* empty_hint = i18n::Tr(i18n::StringId::kFileIsEmptyOrFailedToRead);
         const int hint_w = MeasureTextWidth(empty_hint, font_);
         DrawText(fb, width, (width - hint_w) / 2,
                  InkCenteredTextTopY(font_, empty_hint, content_y + 42, 0),
                  empty_hint, font_, text, height);
-        const char* retry_hint = i18n::Tr("请重新推送 TXT 后再打开", "Push the TXT file again and reopen");
+        const char* retry_hint = i18n::Tr(i18n::StringId::kPushTheTxtFileAgainAndReopen);
         DrawText(fb, width, 24,
                  InkCenteredTextTopY(font_, retry_hint, content_y + 74, 0),
                  retry_hint, font_, secondary, height);

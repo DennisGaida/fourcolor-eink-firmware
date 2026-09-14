@@ -55,7 +55,7 @@ std::string Clock::GetDateString(const char* date_format) {
     // for single-digit month/day. Look up the separators fresh each call so
     // they always match the currently active runtime language.
     std::string s;
-    s += std::to_string(tm.tm_mon + 1) + i18n::Tr("月", "/") + std::to_string(tm.tm_mday) + i18n::Tr("日", "");
+    s += std::to_string(tm.tm_mon + 1) + i18n::Tr(i18n::StringId::kDateShortMonthSep) + std::to_string(tm.tm_mday) + i18n::Tr(i18n::StringId::kDateShortDaySep);
     return s;
 }
 

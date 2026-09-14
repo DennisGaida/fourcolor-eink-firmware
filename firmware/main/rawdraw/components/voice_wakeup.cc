@@ -29,7 +29,7 @@ void VoiceWakeupStartRecording(VoiceWakeupState* state) {
     if (!state) return;
     state->state = VoiceState::RECORDING;
     snprintf(state->overlay_text, sizeof(state->overlay_text), "%s",
-             i18n::Tr("\xe5\xbd\x95\xe9\x9f\xb3\xe4\xb8\xad...", "Recording..."));  // "录音中..."
+             i18n::Tr(i18n::StringId::kRecording));  // "录音中..."
     state->state_start_us = esp_timer_get_time();
     state->visible = true;
     refresh_mark_dirty(&state->refresh);
@@ -39,7 +39,7 @@ void VoiceWakeupWaiting(VoiceWakeupState* state) {
     if (!state) return;
     state->state = VoiceState::WAITING_RESPONSE;
     snprintf(state->overlay_text, sizeof(state->overlay_text), "%s",
-             i18n::Tr("\xe5\xa4\x84\xe7\x90\x86\xe4\xb8\xad...", "Processing..."));  // "处理中..."
+             i18n::Tr(i18n::StringId::kProcessing));  // "处理中..."
     state->state_start_us = esp_timer_get_time();
     refresh_mark_dirty(&state->refresh);
 }
@@ -48,8 +48,7 @@ void VoiceWakeupShowOffline(VoiceWakeupState* state) {
     if (!state) return;
     state->state = VoiceState::OFFLINE_MSG;
     snprintf(state->overlay_text, sizeof(state->overlay_text), "%s",
-             i18n::Tr("\xe7\xa6\xbb\xe7\xba\xbf\xe7\x8a\xb6\xe6\x80\x81\xe4\xb8\x8b\xe6\x97\xa0\xe6\xb3\x95\xe4\xbd\xbf\xe7\x94\xa8\xe8\xaf\xad\xe9\x9f\xb3",
-                       "Voice unavailable while offline"));  // "离线状态下无法使用语音"
+             i18n::Tr(i18n::StringId::kVoiceUnavailableWhileOffline));  // "离线状态下无法使用语音"
     state->state_start_us = esp_timer_get_time();
     state->visible = true;
     refresh_mark_dirty(&state->refresh);
@@ -59,7 +58,7 @@ void VoiceWakeupDone(VoiceWakeupState* state) {
     if (!state) return;
     state->state = VoiceState::DONE;
     snprintf(state->overlay_text, sizeof(state->overlay_text), "%s",
-             i18n::Tr("\xe5\xae\x8c\xe6\x88\x90", "Done"));  // "完成"
+             i18n::Tr(i18n::StringId::kDone));  // "完成"
     state->state_start_us = esp_timer_get_time();
     refresh_mark_dirty(&state->refresh);
 }

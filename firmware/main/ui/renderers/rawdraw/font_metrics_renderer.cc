@@ -47,9 +47,9 @@ void FontMetricsRenderer::Render(uint8_t* fb, int width, int height) {
     char buf[96];
 
     DrawMetricLine(fb, width, height, x, y,
-                   i18n::Tr("字体指标页：看公式，不看美观", "Font metrics page: formulas, not aesthetics"), font_);
+                   i18n::Tr(i18n::StringId::kFontMetricsPageFormulasNotAesthetics), font_);
 
-    const TextInkBounds r_ink = MeasureTextInkBounds(font_, i18n::Tr("识别中...", "Recognizing..."));
+    const TextInkBounds r_ink = MeasureTextInkBounds(font_, i18n::Tr(i18n::StringId::kRecognizing));
     snprintf(buf, sizeof(buf), "Regular: lh=%d bl=%d inkTop=%d inkBot=%d inkH=%d",
              static_cast<int>(font_->line_height),
              static_cast<int>(font_->base_line),
@@ -58,9 +58,9 @@ void FontMetricsRenderer::Render(uint8_t* fb, int width, int height) {
              r_ink.height);
     DrawMetricLine(fb, width, height, x, y, buf, font_);
 
-    const TextInkBounds s_ink = MeasureTextInkBounds(font_, i18n::Tr("发送", "Send"));
+    const TextInkBounds s_ink = MeasureTextInkBounds(font_, i18n::Tr(i18n::StringId::kSend));
     snprintf(buf, sizeof(buf), "%s: inkTop=%d inkBot=%d inkH=%d",
-             i18n::Tr("发送", "Send"), s_ink.top, s_ink.bottom, s_ink.height);
+             i18n::Tr(i18n::StringId::kSend), s_ink.top, s_ink.bottom, s_ink.height);
     DrawMetricLine(fb, width, height, x, y, buf, font_);
 
     const TextInkBounds m_ink = MeasureTextInkBounds(title_font_, "Macintosh");
@@ -79,21 +79,21 @@ void FontMetricsRenderer::Render(uint8_t* fb, int width, int height) {
     const int box_h = 42;
     const int center_y = box_y + box_h / 2;
     const int line_y = CenterTextTopY(font_, box_y, box_h, 0);
-    const int ink_y = InkCenteredTextTopYInBox(font_, i18n::Tr("识别中...", "Recognizing..."), box_y, box_h, 0);
+    const int ink_y = InkCenteredTextTopYInBox(font_, i18n::Tr(i18n::StringId::kRecognizing), box_y, box_h, 0);
     snprintf(buf, sizeof(buf), "%s: lineTop=%d inkTop=%d delta=%d",
-             i18n::Tr("42px框", "42px box"), line_y, ink_y, ink_y - line_y);
+             i18n::Tr(i18n::StringId::k42pxBox), line_y, ink_y, ink_y - line_y);
     DrawMetricLine(fb, width, height, x, y, buf, font_);
 
-    snprintf(buf, sizeof(buf), "%s: top + (h-lh)/2 = %d", i18n::Tr("line公式", "line formula"), line_y);
+    snprintf(buf, sizeof(buf), "%s: top + (h-lh)/2 = %d", i18n::Tr(i18n::StringId::kLineFormula), line_y);
     DrawMetricLine(fb, width, height, x, y, buf, font_);
 
-    snprintf(buf, sizeof(buf), "%s: center(%d)-inkCenter = %d", i18n::Tr("ink公式", "ink formula"), center_y, ink_y);
+    snprintf(buf, sizeof(buf), "%s: center(%d)-inkCenter = %d", i18n::Tr(i18n::StringId::kInkFormula), center_y, ink_y);
     DrawMetricLine(fb, width, height, x, y, buf, font_);
 
     DrawRectBorder(fb, width, {x, y, Style::kScreenWidth - x * 2, box_h}, 1, BLACK);
     DrawHLine(fb, width, y + box_h / 2, x, Style::kScreenWidth - x, BLACK);
-    DrawText(fb, width, x + 10, InkCenteredTextTopYInBox(font_, i18n::Tr("识别中...", "Recognizing..."), y, box_h, 0),
-             i18n::Tr("识别中...（ink居中）", "Recognizing... (ink-centered)"), font_, BLACK, height);
+    DrawText(fb, width, x + 10, InkCenteredTextTopYInBox(font_, i18n::Tr(i18n::StringId::kRecognizing), y, box_h, 0),
+             i18n::Tr(i18n::StringId::kRecognizingInkCentered), font_, BLACK, height);
 
     needs_full_refresh_ = false;
 }

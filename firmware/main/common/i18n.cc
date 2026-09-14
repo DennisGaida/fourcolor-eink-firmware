@@ -26,8 +26,12 @@ void SetLanguage(Language lang) {
     nvs_state::SaveUiLanguage(lang == Language::kEnUS ? 1 : 0);
 }
 
-const char* Tr(const char* zh, const char* en) {
-    return GetLanguage() == Language::kEnUS ? en : zh;
+extern const char* const kStringsZhCN[kStringCount];
+extern const char* const kStringsEnUS[kStringCount];
+
+const char* Tr(StringId id) {
+    const size_t index = static_cast<size_t>(id);
+    return GetLanguage() == Language::kEnUS ? kStringsEnUS[index] : kStringsZhCN[index];
 }
 
 }  // namespace i18n

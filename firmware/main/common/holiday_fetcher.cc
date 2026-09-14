@@ -338,7 +338,7 @@ const char* GetMakeupLabel(int year, int month, int day) {
     if (e && !e->is_rest) {
         // Looked up fresh on every call (not cached) so it reflects the
         // active language rather than freezing at first call.
-        return i18n::Tr("班", "Work");
+        return i18n::Tr(i18n::StringId::kWork);
     }
     return nullptr;
 }

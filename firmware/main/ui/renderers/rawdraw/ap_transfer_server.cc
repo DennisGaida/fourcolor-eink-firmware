@@ -649,9 +649,9 @@ esp_err_t ApTransferServer::UploadHandler(httpd_req_t* req) {
         httpd_resp_set_hdr(req, "Connection", "close");
         const std::string error_msg = is_2bpp
             ? (std::string("{\"success\":false,\"error\":\"") +
-               i18n::Tr("需要400x300 2bpp四色数据", "Requires 400x300 2bpp four-color data") + "\"}")
+               i18n::Tr(i18n::StringId::kRequires400x3002bppFourColorData) + "\"}")
             : (std::string("{\"success\":false,\"error\":\"") +
-               i18n::Tr("需要400x300 1bpp数据", "Requires 400x300 1bpp data") + "\"}");
+               i18n::Tr(i18n::StringId::kRequires400x3001bppData) + "\"}");
         esp_err_t send_ret = httpd_resp_send(req, error_msg.c_str(),
                                               static_cast<ssize_t>(error_msg.size()));
         CloseCurrentSession(req);
@@ -685,12 +685,12 @@ esp_err_t ApTransferServer::UploadHandler(httpd_req_t* req) {
     snprintf(info.id, sizeof(info.id), "ap%011llu",
              static_cast<unsigned long long>(ms % 100000000000ULL));
     strlcpy(info.title, is_2bpp
-        ? i18n::Tr("WiFi四色图片", "WiFi Color Photo")
-        : i18n::Tr("WiFi黑白图片", "WiFi B&W Photo"), sizeof(info.title));
+        ? i18n::Tr(i18n::StringId::kWifiColorPhoto)
+        : i18n::Tr(i18n::StringId::kWifiBWPhoto), sizeof(info.title));
     snprintf(info.location, sizeof(info.location), "WiFi AP");
     strlcpy(info.body, is_2bpp
-        ? i18n::Tr("手机 WiFi 传图 · 2 BP 四色", "Phone WiFi transfer · 2bpp color")
-        : i18n::Tr("手机 WiFi 传图 · 1 BP 黑白", "Phone WiFi transfer · 1bpp B&W"), sizeof(info.body));
+        ? i18n::Tr(i18n::StringId::kPhoneWifiTransfer2bppColor)
+        : i18n::Tr(i18n::StringId::kPhoneWifiTransfer1bppBW), sizeof(info.body));
     info.width = kScreenWidth;
     info.height = kScreenHeight;
     info.file_size = expected_size;
@@ -733,7 +733,7 @@ esp_err_t ApTransferServer::UploadHandler(httpd_req_t* req) {
 
     self->NotifyState(kError, "Save failed");
     const std::string save_failed_msg = std::string("{\"success\":false,\"error\":\"") +
-        i18n::Tr("保存失败", "Save failed") + "\"}";
+        i18n::Tr(i18n::StringId::kSaveFailed) + "\"}";
     esp_err_t send_ret = httpd_resp_send(req, save_failed_msg.c_str(),
                                           static_cast<ssize_t>(save_failed_msg.size()));
     CloseCurrentSession(req);

@@ -479,13 +479,13 @@ void SettingsRenderer::Render(uint8_t* fb, int width, int height) {
 
     const char* current_section = (section_indices[current_section_pos] >= 0)
         ? items_[section_indices[current_section_pos]].label.c_str()
-        : i18n::Tr("系统", "System");
+        : i18n::Tr(i18n::StringId::kSystem);
 
     const int nav_top = body_top + kSettingsContentTopGap;
     for (int i = 0; i < static_cast<int>(section_indices.size()); ++i) {
         const int sy = nav_top + i * kSettingsNavItemH;
         const bool selected = (i == current_section_pos);
-        const char* label = (section_indices[i] >= 0) ? items_[section_indices[i]].label.c_str() : i18n::Tr("系统", "System");
+        const char* label = (section_indices[i] >= 0) ? items_[section_indices[i]].label.c_str() : i18n::Tr(i18n::StringId::kSystem);
         const int nav_pill_x = 16;
         const int nav_pill_w = SettingsNavDividerX() - 26;
         const int nav_pill_h = 28;
@@ -523,14 +523,14 @@ void SettingsRenderer::Render(uint8_t* fb, int width, int height) {
             const char* label;
             std::string value;
         };
-        const std::string version = firmware_version_.empty() ? i18n::Tr("未知", "Unknown") : firmware_version_;
-        const std::string serial = mac_address_.empty() ? i18n::Tr("未读取", "Not read") : mac_address_;
+        const std::string version = firmware_version_.empty() ? i18n::Tr(i18n::StringId::kUnknown) : firmware_version_;
+        const std::string serial = mac_address_.empty() ? i18n::Tr(i18n::StringId::kNotRead) : mac_address_;
         const std::vector<InfoRow> rows = {
-            {i18n::Tr("设备名称", "Device Name"), "FourColor Ink"},
-            {i18n::Tr("型号", "Model"), "FourColor-Beta1.0"},
-            {i18n::Tr("固件版本", "Firmware Version"), version},
-            {i18n::Tr("硬件版本", "Hardware Version"), chip_model_.empty() ? "ESP32-S3" : chip_model_},
-            {i18n::Tr("MAC地址", "MAC Address"), serial},
+            {i18n::Tr(i18n::StringId::kDeviceName), "FourColor Ink"},
+            {i18n::Tr(i18n::StringId::kModel), "FourColor-Beta1.0"},
+            {i18n::Tr(i18n::StringId::kFirmwareVersion), version},
+            {i18n::Tr(i18n::StringId::kHardwareVersion), chip_model_.empty() ? "ESP32-S3" : chip_model_},
+            {i18n::Tr(i18n::StringId::kMacAddress), serial},
         };
         debug_visible_row_count = static_cast<int>(rows.size());
         int y = kSettingsTableTop;
@@ -613,7 +613,7 @@ void SettingsRenderer::Render(uint8_t* fb, int width, int height) {
     if (showing_debug_info_ && now < debug_hint_until_us_) {
         const int hint_y = Style::kStatusBarHeight + 2;
         const int hint_h = font_->line_height + Style::kSpacingXS * 2;
-        const char* hint_text = i18n::Tr("调试信息已显示", "Debug info shown");
+        const char* hint_text = i18n::Tr(i18n::StringId::kDebugInfoShown);
         int hint_w = MeasureTextWidth(hint_text, font_);
         int hint_x = (width - hint_w) / 2;
 
@@ -719,7 +719,7 @@ void SettingsRenderer::RenderItem(uint8_t* fb, int width, int y,
                      value_font_, text_style.fg);
         }
     } else if (item.type == SettingsItemType::Action) {
-        const char* action_text = item.value.empty() ? i18n::Tr("执行", "Run") : item.value.c_str();
+        const char* action_text = item.value.empty() ? i18n::Tr(i18n::StringId::kRun) : item.value.c_str();
         const int action_w = MeasureTextWidth(action_text, value_font_);
         const int act_x = content_right - right_margin - action_w;
         label_right = act_x - Style::kSpacingLG;
@@ -1138,7 +1138,7 @@ void SettingsRenderer::RenderDebugInfo(uint8_t* fb, int width, int height, int b
     DrawHLine(fb, width, y, Style::kSpacingMD, width - Style::kSpacingMD, border);
     y += Style::kSpacingXS;
 
-    DrawText(fb, width, Style::kSpacingMD, y, i18n::Tr("调试信息", "Debug Info"), title_font_, text);
+    DrawText(fb, width, Style::kSpacingMD, y, i18n::Tr(i18n::StringId::kDebugInfo), title_font_, text);
     y += title_font_->line_height + Style::kSpacingXS;
 
     // MAC address
@@ -1239,11 +1239,11 @@ void SettingsRenderer::RenderAboutDialog(uint8_t* fb, int width, int height) {
         std::string value;
     };
     const std::vector<InfoRow> rows = {
-        {i18n::Tr("设备名称", "Device Name"), "FourColor Ink"},
-        {i18n::Tr("型号", "Model"), "FourColor-Beta1.0"},
-        {i18n::Tr("固件版本", "Firmware Version"), firmware_version_.empty() ? i18n::Tr("未知", "Unknown") : firmware_version_},
-        {i18n::Tr("硬件版本", "Hardware Version"), chip_model_.empty() ? "ESP32-S3" : chip_model_},
-        {i18n::Tr("MAC地址", "MAC Address"), mac_address_.empty() ? i18n::Tr("未读取", "Not read") : mac_address_},
+        {i18n::Tr(i18n::StringId::kDeviceName), "FourColor Ink"},
+        {i18n::Tr(i18n::StringId::kModel), "FourColor-Beta1.0"},
+        {i18n::Tr(i18n::StringId::kFirmwareVersion), firmware_version_.empty() ? i18n::Tr(i18n::StringId::kUnknown) : firmware_version_},
+        {i18n::Tr(i18n::StringId::kHardwareVersion), chip_model_.empty() ? "ESP32-S3" : chip_model_},
+        {i18n::Tr(i18n::StringId::kMacAddress), mac_address_.empty() ? i18n::Tr(i18n::StringId::kNotRead) : mac_address_},
     };
     const int row_h = kAboutRowHeight;
     int y = dialog_y + titlebar_h + 12;
@@ -1297,7 +1297,7 @@ void SettingsRenderer::RenderStorageDialog(uint8_t* fb, int width, int height) {
     DrawLine(fb, width, {dialog_x + 10, dialog_y + 10}, {dialog_x + 18, dialog_y + 18}, accent);
     DrawLine(fb, width, {dialog_x + 18, dialog_y + 10}, {dialog_x + 10, dialog_y + 18}, accent);
 
-    const char* title = i18n::Tr("存储空间", "Storage");
+    const char* title = i18n::Tr(i18n::StringId::kStorage);
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopYInBox(font_, title, dialog_y, titlebar_h, 0),
@@ -1337,10 +1337,10 @@ void SettingsRenderer::RenderStorageDialog(uint8_t* fb, int width, int height) {
         std::string value;
     };
     const std::vector<InfoRow> rows = {
-        {i18n::Tr("已用空间", "Used"), storage_used_},
-        {i18n::Tr("总空间", "Total"), storage_total_},
-        {i18n::Tr("图片数量", "Photos"), std::to_string(storage_photos_)},
-        {i18n::Tr("TXT数量", "TXT Files"), std::to_string(storage_txts_)},
+        {i18n::Tr(i18n::StringId::kUsed), storage_used_},
+        {i18n::Tr(i18n::StringId::kTotal), storage_total_},
+        {i18n::Tr(i18n::StringId::kPhotos), std::to_string(storage_photos_)},
+        {i18n::Tr(i18n::StringId::kTxtFiles), std::to_string(storage_txts_)},
     };
     const int rows_x = dialog_x + 88;
     int y = dialog_y + titlebar_h + 12;
@@ -1385,7 +1385,7 @@ void SettingsRenderer::RenderVolumeDialog(uint8_t* fb, int width, int height) {
                         Style::kBorderRadiusLG, shadow_style);
     DrawStyledRoundRect(fb, width, height, {dialog_x, dialog_y, dialog_w, dialog_h},
                         Style::kBorderRadiusLG, modal_style);
-    const char* title = i18n::Tr("音量调整", "Volume");
+    const char* title = i18n::Tr(i18n::StringId::kVolume);
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopY(font_, title, dialog_y + 24, kTextOpticalNudgeY),
@@ -1401,7 +1401,7 @@ void SettingsRenderer::RenderVolumeDialog(uint8_t* fb, int width, int height) {
 
     const int speaker_x = inner_x + 12;
     const int speaker_y = dialog_y + 60;
-    DrawSettingsVectorIcon(fb, width, i18n::Tr("音量", "Volume"), speaker_x, speaker_y, accent);
+    DrawSettingsVectorIcon(fb, width, i18n::Tr(i18n::StringId::kVolume2), speaker_x, speaker_y, accent);
 
     const int track_x = inner_x;
     const int track_y = dialog_y + 102;
@@ -1421,7 +1421,7 @@ void SettingsRenderer::RenderVolumeDialog(uint8_t* fb, int width, int height) {
     }
 
     const int hint_center_y = dialog_y + dialog_h - 20;
-    const char* volume_hint = i18n::Tr("UP/DN 调整  BOOT 保存", "UP/DN adjust  BOOT save");
+    const char* volume_hint = i18n::Tr(i18n::StringId::kUpDnAdjustBootSave);
     DrawText(fb, width, inner_x + 6, InkCenteredTextTopY(font_, volume_hint, hint_center_y, kTextOpticalNudgeY),
              volume_hint, font_, secondary, height);
 }
@@ -1456,7 +1456,7 @@ void SettingsRenderer::RenderServerDialog(uint8_t* fb, int width, int height) {
     DrawLine(fb, width, {dialog_x + 10, dialog_y + 10}, {dialog_x + 18, dialog_y + 18}, danger);
     DrawLine(fb, width, {dialog_x + 18, dialog_y + 10}, {dialog_x + 10, dialog_y + 18}, danger);
 
-    const char* title = i18n::Tr("服务地址", "Server Address");
+    const char* title = i18n::Tr(i18n::StringId::kServerAddress);
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopYInBox(font_, title, dialog_y, titlebar_h, 0),
@@ -1473,8 +1473,8 @@ void SettingsRenderer::RenderServerDialog(uint8_t* fb, int width, int height) {
     int y = dialog_y + titlebar_h + 10;
 
     // Current connection label
-    std::string current_label = i18n::Tr("当前: ", "Current: ") +
-        (server_current_addr_.empty() ? i18n::Tr("未连接", "Disconnected") : server_current_addr_);
+    std::string current_label = i18n::Tr(i18n::StringId::kCurrent) +
+        (server_current_addr_.empty() ? i18n::Tr(i18n::StringId::kDisconnected) : server_current_addr_);
     DrawText(fb, width, rows_x,
              InkCenteredTextTopYInBox(font_, current_label.c_str(), y, row_h, 0),
              current_label.c_str(), font_, secondary, height);
@@ -1488,8 +1488,8 @@ void SettingsRenderer::RenderServerDialog(uint8_t* fb, int width, int height) {
         int index;
     };
     const ServerOption options[] = {
-        {i18n::Tr("本地自发现", "Local Discovery"), server_local_addr_, 0},
-        {i18n::Tr("远程服务器", "Remote Server"), server_remote_addr_, 1},
+        {i18n::Tr(i18n::StringId::kLocalDiscovery), server_local_addr_, 0},
+        {i18n::Tr(i18n::StringId::kRemoteServer), server_remote_addr_, 1},
     };
 
     for (const auto& opt : options) {
@@ -1520,7 +1520,7 @@ void SettingsRenderer::RenderServerDialog(uint8_t* fb, int width, int height) {
 
     // Hint
     const int hint_center_y = dialog_y + dialog_h - 20;
-    const char* server_hint = i18n::Tr("UP/DN 切换  BOOT 确认", "UP/DN switch  BOOT confirm");
+    const char* server_hint = i18n::Tr(i18n::StringId::kUpDnSwitchBootConfirm);
     DrawText(fb, width, dialog_x + 30,
              InkCenteredTextTopY(font_, server_hint, hint_center_y, 0),
              server_hint, font_, secondary, height);
@@ -1557,7 +1557,7 @@ void SettingsRenderer::RenderServerListDialog(uint8_t* fb, int width, int height
     DrawLine(fb, width, {dialog_x + 10, dialog_y + 10}, {dialog_x + 18, dialog_y + 18}, danger);
     DrawLine(fb, width, {dialog_x + 18, dialog_y + 10}, {dialog_x + 10, dialog_y + 18}, danger);
 
-    const char* title = i18n::Tr("服务地址历史", "Server Address History");
+    const char* title = i18n::Tr(i18n::StringId::kServerAddressHistory);
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopYInBox(font_, title, dialog_y, titlebar_h, 0),
@@ -1574,7 +1574,7 @@ void SettingsRenderer::RenderServerListDialog(uint8_t* fb, int width, int height
     const int total = static_cast<int>(server_list_addresses_.size());
 
     if (total == 0) {
-        const char* no_history = i18n::Tr("无历史地址", "No history addresses");
+        const char* no_history = i18n::Tr(i18n::StringId::kNoHistoryAddresses);
         DrawText(fb, width, rows_x,
                  InkCenteredTextTopY(font_, no_history, y + row_h / 2, 0),
                  no_history, font_, secondary, height);
@@ -1614,7 +1614,7 @@ void SettingsRenderer::RenderServerListDialog(uint8_t* fb, int width, int height
 
             // Current indicator
             if (is_current) {
-                const char* cur_mark = i18n::Tr("(当前)", "(current)");
+                const char* cur_mark = i18n::Tr(i18n::StringId::kCurrent2);
                 DrawText(fb, width, content_right - MeasureTextWidth(cur_mark, font_) - 4,
                          InkCenteredTextTopY(font_, cur_mark, center_y, 0),
                          cur_mark, font_, is_selected ? selected_style.fg : secondary, height);
@@ -1639,7 +1639,7 @@ void SettingsRenderer::RenderServerListDialog(uint8_t* fb, int width, int height
 
     // Hint
     const int hint_center_y = dialog_y + dialog_h - 20;
-    const char* scroll_hint = i18n::Tr("UP/DN 滚动  BOOT 选择", "UP/DN scroll  BOOT select");
+    const char* scroll_hint = i18n::Tr(i18n::StringId::kUpDnScrollBootSelect);
     DrawText(fb, width, dialog_x + 30,
              InkCenteredTextTopY(font_, scroll_hint, hint_center_y, 0),
              scroll_hint, font_, secondary, height);
@@ -1669,7 +1669,7 @@ void SettingsRenderer::RenderThemeDialog(uint8_t* fb, int width, int height) {
                         Style::kBorderRadiusMD, modal_style);
     DrawHLine(fb, width, dialog_y + titlebar_h, dialog_x + 1, dialog_x + dialog_w - 2, border_style.border);
 
-    const char* title = i18n::Tr("选择主题", "Select Theme");
+    const char* title = i18n::Tr(i18n::StringId::kSelectTheme);
     const int title_w = MeasureTextWidth(title, font_);
     DrawStyledText(fb, width, dialog_x + (dialog_w - title_w) / 2,
                    InkCenteredTextTopYInBox(font_, title, dialog_y, titlebar_h, 0),
@@ -1703,7 +1703,7 @@ void SettingsRenderer::RenderThemeDialog(uint8_t* fb, int width, int height) {
         DrawRectBorder(fb, width, {swatch_x + 20, y + 6, 16, 13}, 1, border_style.border);
 
         if (current) {
-            const char* mark = i18n::Tr("当前", "Current");
+            const char* mark = i18n::Tr(i18n::StringId::kCurrent3);
             const int mark_w = MeasureTextWidth(mark, value_font_);
             DrawStyledText(fb, width, swatch_x - mark_w - 8,
                            InkCenteredTextTopY(value_font_, mark, center_y, 0),
@@ -1712,7 +1712,7 @@ void SettingsRenderer::RenderThemeDialog(uint8_t* fb, int width, int height) {
         y += row_h;
     }
 
-    const char* hint = i18n::Tr("UP/DN 选择  BOOT 应用", "UP/DN select  BOOT apply");
+    const char* hint = i18n::Tr(i18n::StringId::kUpDnSelectBootApply);
     DrawStyledText(fb, width, dialog_x + 24,
                    InkCenteredTextTopY(font_, hint, dialog_y + dialog_h - 18, 0),
                    hint, font_, text_style, height);
@@ -1751,7 +1751,7 @@ void SettingsRenderer::RenderOtaDialog(uint8_t* fb, int width, int height) {
     DrawLine(fb, width, {dialog_x + 10, dialog_y + 10}, {dialog_x + 18, dialog_y + 18}, danger);
     DrawLine(fb, width, {dialog_x + 18, dialog_y + 10}, {dialog_x + 10, dialog_y + 18}, danger);
 
-    const char* title = i18n::Tr("固件更新", "Firmware Update");
+    const char* title = i18n::Tr(i18n::StringId::kFirmwareUpdate);
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopYInBox(font_, title, dialog_y, titlebar_h, 0),
@@ -1765,7 +1765,7 @@ void SettingsRenderer::RenderOtaDialog(uint8_t* fb, int width, int height) {
     const int rows_x = dialog_x + 18;
     int y = dialog_y + titlebar_h + 10;
 
-    std::string current = std::string(i18n::Tr("当前: ", "Current: ")) +
+    std::string current = std::string(i18n::Tr(i18n::StringId::kCurrent)) +
         (ota_current_version_.empty() ? std::string("--") : ota_current_version_);
     DrawText(fb, width, rows_x,
              InkCenteredTextTopY(font_, current.c_str(), y + row_h / 2, 0),
@@ -1802,7 +1802,7 @@ void SettingsRenderer::RenderOtaDialog(uint8_t* fb, int width, int height) {
         const int bar_y = y + 34;
         const int bar_w = content_right - rows_x;
         const int bar_h = 16;
-        std::string status = ota_status_text_.empty() ? i18n::Tr("正在更新...", "Updating...") : ota_status_text_;
+        std::string status = ota_status_text_.empty() ? i18n::Tr(i18n::StringId::kUpdating) : ota_status_text_;
         status = FitTextToWidth(status, font_, std::max(0, content_right - rows_x));
         DrawText(fb, width, rows_x,
                  InkCenteredTextTopY(font_, status.c_str(), y + row_h / 2, 0),
@@ -1821,15 +1821,15 @@ void SettingsRenderer::RenderOtaDialog(uint8_t* fb, int width, int height) {
                  bar_y + bar_h + 8, pct_buf, font_, secondary, height);
     } else {
         std::string status = ota_status_text_;
-        if (status.empty()) status = failed ? i18n::Tr("更新失败", "Update failed") : i18n::Tr("正在获取版本列表...", "Fetching version list...");
+        if (status.empty()) status = failed ? i18n::Tr(i18n::StringId::kUpdateFailed) : i18n::Tr(i18n::StringId::kFetchingVersionList);
         status = FitTextToWidth(status, font_, std::max(0, content_right - rows_x));
         DrawText(fb, width, rows_x,
                  InkCenteredTextTopY(font_, status.c_str(), y + row_h / 2, 0),
                  status.c_str(), font_, failed ? danger : text, height);
     }
 
-    const char* hint = selecting ? i18n::Tr("UP/DN 选择  BOOT 更新  长按取消", "UP/DN select  BOOT update  hold to cancel")
-                                 : i18n::Tr("长按取消  BOOT 关闭", "Hold to cancel  BOOT close");
+    const char* hint = selecting ? i18n::Tr(i18n::StringId::kUpDnSelectBootUpdateHoldToCancel)
+                                 : i18n::Tr(i18n::StringId::kHoldToCancelBootClose);
     const std::string hint_text = FitTextToWidth(hint, font_, dialog_w - 40);
     const int hint_center_y = dialog_y + dialog_h - 20;
     DrawText(fb, width, dialog_x + 20,
@@ -1865,7 +1865,7 @@ void SettingsRenderer::RenderOtaConfirmDialog(uint8_t* fb, int width, int height
                         Style::kBorderRadiusMD - 1, title_style);
 
     // Title
-    const char* title = i18n::Tr("确认更新?", "Confirm Update?");
+    const char* title = i18n::Tr(i18n::StringId::kConfirmUpdate);
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopY(font_, title, dialog_y + titlebar_h / 2, 0),
@@ -1875,7 +1875,7 @@ void SettingsRenderer::RenderOtaConfirmDialog(uint8_t* fb, int width, int height
     int y = dialog_y + titlebar_h + 15;
 
     // Show firmware name
-    std::string firmware_label = std::string(i18n::Tr("固件: ", "Firmware: ")) + ota_confirm_firmware_name_;
+    std::string firmware_label = std::string(i18n::Tr(i18n::StringId::kFirmware2)) + ota_confirm_firmware_name_;
     firmware_label = FitTextToWidth(firmware_label, font_, dialog_w - 60);
     DrawText(fb, width, content_x,
              InkCenteredTextTopY(font_, firmware_label.c_str(), y + row_h / 2, 0),
@@ -1883,7 +1883,7 @@ void SettingsRenderer::RenderOtaConfirmDialog(uint8_t* fb, int width, int height
     y += row_h + 8;
 
     // Confirm/cancel options
-    const char* options[2] = {i18n::Tr("确认更新", "Confirm Update"), i18n::Tr("取消", "Cancel")};
+    const char* options[2] = {i18n::Tr(i18n::StringId::kConfirmUpdate2), i18n::Tr(i18n::StringId::kCancel)};
     for (int i = 0; i < 2; ++i) {
         const bool is_selected = (i == ota_confirm_selected_);
         const int opt_y = y + i * row_h;
@@ -1899,7 +1899,7 @@ void SettingsRenderer::RenderOtaConfirmDialog(uint8_t* fb, int width, int height
     }
 
     // Hint
-    const char* hint = i18n::Tr("UP/DN 选择  BOOT 确认  长按返回", "UP/DN select  BOOT confirm  hold to back");
+    const char* hint = i18n::Tr(i18n::StringId::kUpDnSelectBootConfirmHoldToBack);
     const int hint_w = MeasureTextWidth(hint, font_);
     const int hint_y = dialog_y + dialog_h - 24;
     DrawText(fb, width, dialog_x + (dialog_w - hint_w) / 2,

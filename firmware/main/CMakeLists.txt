@@ -58,6 +58,7 @@ set(SOURCES
     "common/storage_manager.cc"
     "common/nvs_state.cc"
     "common/i18n.cc"
+    "common/i18n_strings.cc"
     "common/bluetooth_manager.cc"
     "common/ble_gatt_service.cc"
     "common/ble_image_receiver.cc"
