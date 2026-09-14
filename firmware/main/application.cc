@@ -93,12 +93,12 @@ void StartSntpClockSyncOnce() {
     static bool s_started = false;
     if (s_started) return;
 
-    setenv("TZ", "CST-8", 1);
+    setenv("TZ", "CET-1CEST,M3.5.0,M10.5.0/3", 1);
     tzset();
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "ntp.aliyun.com");
-    esp_sntp_setservername(1, "cn.pool.ntp.org");
-    esp_sntp_setservername(2, "pool.ntp.org");
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_setservername(1, "europe.pool.ntp.org");
+    esp_sntp_setservername(2, "time.google.com");
     esp_sntp_set_time_sync_notification_cb([](struct timeval*) {
         time_t now = 0;
         time(&now);
@@ -111,7 +111,7 @@ void StartSntpClockSyncOnce() {
     });
     esp_sntp_init();
     s_started = true;
-    ESP_LOGI(kTag, "SNTP started: tz=Asia/Shanghai servers=ntp.aliyun.com,cn.pool.ntp.org,pool.ntp.org");
+    ESP_LOGI(kTag, "SNTP started: tz=Europe/Berlin servers=pool.ntp.org,europe.pool.ntp.org,time.google.com");
 }
 
 bool IsLocalHttpServiceRunning(const ui::RawDrawUiManager* manager) {
