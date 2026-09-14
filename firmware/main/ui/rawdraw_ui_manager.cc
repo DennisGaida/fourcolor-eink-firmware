@@ -17,6 +17,7 @@
 #include "lvgl.h"
 #include "settings.h"
 #include "i18n.h"
+#include "common/presence_api.h"
 
 #include <esp_log.h>
 #include <esp_timer.h>
@@ -25,6 +26,7 @@
 #include <cstdio>
 #include <string>
 #include <ctime>
+#include <unordered_map>
 
 static const char* kTag = "RawDrawUiManager";
 static constexpr const char* kRawDrawThemeNvsKey = "rawdraw_theme";
@@ -216,6 +218,7 @@ const char* RawDrawUiManager::GetPageTitle(RawDrawPageId page) {
         case RawDrawPageId::FontDebug:  return Tr(StringId::kAlignmentTest);
         case RawDrawPageId::FontMetrics: return Tr(StringId::kFontMetrics);
         case RawDrawPageId::APTransfer: return Tr(StringId::kTransferMode);
+        case RawDrawPageId::BusyLight: return Tr(StringId::kBusyLight);
         default:               return Tr(StringId::kUnknown);
     }
 }
@@ -228,7 +231,7 @@ RawDrawUiManager::RawDrawUiManager()
     : lcd_(nullptr)
     , width_(Style::kScreenWidth)
     , height_(Style::kScreenHeight)
-    , current_page_(RawDrawPageId::Gallery)
+    , current_page_(RawDrawPageId::BusyLight)
     , refresh_cb_(nullptr)
     , full_refresh_pending_(false)
     , clock_(rawdraw::kClockX, rawdraw::kClockY, &font_zectrix_16_1)
@@ -242,6 +245,7 @@ RawDrawUiManager::RawDrawUiManager()
     photo_gallery_renderer_ = std::make_unique<rawdraw::PhotoGalleryRenderer>();
     photo_detail_renderer_ = std::make_unique<rawdraw::PhotoDetailRenderer>();
     weather_renderer_ = std::make_unique<rawdraw::WeatherRenderer>();
+    busy_light_renderer_ = std::make_unique<rawdraw::BusyLightRenderer>();
     weather_detail_renderer_ = std::make_unique<rawdraw::WeatherDetailRenderer>();
     news_renderer_ = std::make_unique<rawdraw::NewsRenderer>();
     lifebar_renderer_ = std::make_unique<rawdraw::LifeBarRenderer>();
@@ -321,9 +325,45 @@ RawDrawUiManager::RawDrawUiManager()
     ap_transfer_server_->SetShowPhotoCallback([this](const std::string& photo_id) {
         return ShowPhotoById(photo_id);
     });
+    ap_transfer_server_->SetScreenshotCallback([this]() -> rawdraw::ApTransferServer::FramebufferSnapshot {
+        rawdraw::ApTransferServer::FramebufferSnapshot snap;
+        if (!lcd_) return snap;
+        auto* fb = lcd_->GetFramebuffer();
+        if (!fb) return snap;
+        snap.width = width_;
+        snap.height = height_;
+        const size_t bytes_per_row = (static_cast<size_t>(width_) * 2 + 7) / 8;
+        const size_t total_bytes = bytes_per_row * static_cast<size_t>(height_);
+        snap.data.resize(total_bytes);
+        auto* mutex = lcd_->GetMutex();
+        if (mutex) xSemaphoreTake(mutex, portMAX_DELAY);
+        memcpy(snap.data.data(), fb, total_bytes);
+        if (mutex) xSemaphoreGive(mutex);
+        return snap;
+    });
+
+    ap_transfer_server_->SetButtonInjectCallback([this](const std::string& type) {
+        static const std::unordered_map<std::string, rawdraw::ButtonEvent::Type> kTypes = {
+            {"boot_click", rawdraw::ButtonEvent::kBootClick},
+            {"boot_double_click", rawdraw::ButtonEvent::kBootDoubleClick},
+            {"boot_long_press", rawdraw::ButtonEvent::kBootLongPress},
+            {"up_click", rawdraw::ButtonEvent::kUpClick},
+            {"up_double_click", rawdraw::ButtonEvent::kUpDoubleClick},
+            {"up_long_press", rawdraw::ButtonEvent::kUpLongPress},
+            {"down_click", rawdraw::ButtonEvent::kDownClick},
+            {"down_double_click", rawdraw::ButtonEvent::kDownDoubleClick},
+            {"down_long_press", rawdraw::ButtonEvent::kDownLongPress},
+        };
+        auto it = kTypes.find(type);
+        if (it == kTypes.end()) {
+            ESP_LOGW(kTag, "Unknown injected button type: %s", type.c_str());
+            return;
+        }
+        HandleInput({it->second});
+    });
 
     // Initialize status bar defaults
-    status_bar_data_.page_title = GetPageTitle(RawDrawPageId::Gallery);
+    status_bar_data_.page_title = GetPageTitle(RawDrawPageId::BusyLight);
     status_bar_data_.wifi_connected = false;
     status_bar_data_.server_connected = false;
     status_bar_data_.battery_level = -1;
@@ -557,6 +597,7 @@ rawdraw::PageRenderer* RawDrawUiManager::GetRendererForPage(RawDrawPageId page) 
         case RawDrawPageId::FontDebug:  return font_debug_renderer_.get();
         case RawDrawPageId::FontMetrics: return font_metrics_renderer_.get();
         case RawDrawPageId::APTransfer: return ap_transfer_renderer_.get();
+        case RawDrawPageId::BusyLight: return busy_light_renderer_.get();
         default:               return nullptr;
     }
 }
@@ -647,8 +688,9 @@ bool RawDrawUiManager::TryDisplayCurrentPhotoRaw4Color() {
     return shown;
 }
 
-const std::array<RawDrawUiManager::QuickSwitchItem, 2>& RawDrawUiManager::GetQuickSwitchItems() {
-    static const std::array<QuickSwitchItem, 2> kItems = {{
+const std::array<RawDrawUiManager::QuickSwitchItem, 3>& RawDrawUiManager::GetQuickSwitchItems() {
+    static const std::array<QuickSwitchItem, 3> kItems = {{
+        {RawDrawPageId::BusyLight, FA_SETTINGS_CLOCK},
         {RawDrawPageId::Gallery, FA_SETTINGS_IMAGE},
         {RawDrawPageId::Settings, FA_SETTINGS_GEAR},
 #if 0
@@ -1681,6 +1723,25 @@ rawdraw::WifiStatus RawDrawUiManager::GetWifiStatus() const {
         return wifi_renderer_->GetStatus();
     }
     return {};
+}
+
+// ============================================================
+// Busy-light presence page data updates
+// ============================================================
+
+void RawDrawUiManager::UpdatePresenceStatus(const PresenceStatus& status) {
+    if (!busy_light_renderer_) return;
+
+    busy_light_renderer_->Update(status);
+
+    if (current_page_ == RawDrawPageId::BusyLight) {
+        RefreshActivePage(false);
+    }
+}
+
+PresenceStatus RawDrawUiManager::GetPresenceStatus() const {
+    const PresenceStatus* last = presence_api_get_last_data();
+    return last ? *last : PresenceStatus{};
 }
 
 void RawDrawUiManager::SetWifiBlinking(bool blinking) {

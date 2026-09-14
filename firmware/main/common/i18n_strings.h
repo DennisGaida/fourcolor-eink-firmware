@@ -475,10 +475,32 @@ enum class StringId : uint16_t {
     kCalendar,
     kAlignmentTest,
     kFontMetrics,
-    kTransferMode
+    kTransferMode,
+    kBusyLight,
+    kBusyLightCamOn,
+    kBusyLightCamOff,
+    kBusyLightNoCalendarData,
+    kBusyLightLongPressRefresh,
+    kBusyLightMeeting,
+    kBusyLightFree,
+    kBusyLightBusyTitle,
+    kBusyLightMoreFmt,
+    kBusyLightEarlierFmt,
+    kBusyLightLaterFmt,
+    kBusyLightUntil,
+    kBusyLightUntilNext,
+    kBusyLightFreeAllDay,
+    kBusyLightAdhocCall,
+    kBusyLightComeOnIn,
+    kBusyLightInternalPrefix,
+    kBusyLightImportant,
+    kBusyLightCustomer,
+    kBusyLightComeIn,
+    kBusyLightPresentingBanner,
+    kBusyLightFooterHint
 };
 
-constexpr size_t kStringCount = 462;
+constexpr size_t kStringCount = 484;
 
 }  // namespace i18n
 

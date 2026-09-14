@@ -476,7 +476,29 @@ extern const char* const kStringsZhCN[kStringCount] = {
     "日历",
     "对齐测试",
     "字体指标",
-    "传图模式"
+    "传图模式",
+    "忙碌灯",
+    "摄像头开启",
+    "摄像头关闭",
+    "暂无日程数据",
+    "长按刷新",
+    "会议",
+    "空闲",
+    "忙碌",
+    "+%d 更多",
+    "↑%d 更早",
+    "↓%d 更晚",
+    "直到",
+    "下一项",
+    "今日无日程",
+    "临时通话",
+    "可以进来",
+    "内部 — ",
+    "重要",
+    "客户",
+    "可以进来",
+    "演示中 — 请勿打扰",
+    "按键查看今日计划"
 };
 
 extern const char* const kStringsEnUS[kStringCount] = {
@@ -941,7 +963,29 @@ extern const char* const kStringsEnUS[kStringCount] = {
     "Calendar",
     "Alignment Test",
     "Font Metrics",
-    "Transfer Mode"
+    "Transfer Mode",
+    "Busy Light",
+    "CAM ON",
+    "CAM OFF",
+    "No calendar data",
+    "Long press to refresh",
+    "MEETING",
+    "FREE",
+    "Busy",
+    "+%d more",
+    "%d earlier",
+    "%d later",
+    "until",
+    "until",
+    "free all day",
+    "Ad-hoc call",
+    "Come on in",
+    "Internal — ",
+    "important",
+    "Customer",
+    "come in",
+    "Presenting — do not disturb",
+    "press for today's plan"
 };
 
 }  // namespace i18n
