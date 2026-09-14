@@ -526,12 +526,11 @@ void SettingsRenderer::Render(uint8_t* fb, int width, int height) {
         const std::string version = firmware_version_.empty() ? i18n::Tr("未知", "Unknown") : firmware_version_;
         const std::string serial = mac_address_.empty() ? i18n::Tr("未读取", "Not read") : mac_address_;
         const std::vector<InfoRow> rows = {
-            {i18n::Tr("设备名称", "Device Name"), "notellm"},
-            {i18n::Tr("型号", "Model"), "Youn-Beta1.0"},
+            {i18n::Tr("设备名称", "Device Name"), "FourColor Ink"},
+            {i18n::Tr("型号", "Model"), "FourColor-Beta1.0"},
             {i18n::Tr("固件版本", "Firmware Version"), version},
             {i18n::Tr("硬件版本", "Hardware Version"), chip_model_.empty() ? "ESP32-S3" : chip_model_},
             {i18n::Tr("MAC地址", "MAC Address"), serial},
-            {i18n::Tr("官方网站", "Website"), "blog.lazyyoun.xyz"},
         };
         debug_visible_row_count = static_cast<int>(rows.size());
         int y = kSettingsTableTop;
@@ -1217,7 +1216,7 @@ void SettingsRenderer::RenderAboutDialog(uint8_t* fb, int width, int height) {
     DrawRectBorder(fb, width, {dialog_x + 8, dialog_y + 8, 12, 12}, 1, accent);
     DrawLine(fb, width, {dialog_x + 10, dialog_y + 10}, {dialog_x + 18, dialog_y + 18}, accent);
     DrawLine(fb, width, {dialog_x + 18, dialog_y + 10}, {dialog_x + 10, dialog_y + 18}, accent);
-    const char* title = "About notellm";
+    const char* title = "About FourColor Ink";
     const int title_w = MeasureTextWidth(title, font_);
     DrawText(fb, width, dialog_x + (dialog_w - title_w) / 2,
              InkCenteredTextTopYInBox(font_, title, dialog_y, titlebar_h, 0),
@@ -1240,12 +1239,11 @@ void SettingsRenderer::RenderAboutDialog(uint8_t* fb, int width, int height) {
         std::string value;
     };
     const std::vector<InfoRow> rows = {
-        {i18n::Tr("设备名称", "Device Name"), "notellm"},
-        {i18n::Tr("型号", "Model"), "Youn-Beta1.0"},
+        {i18n::Tr("设备名称", "Device Name"), "FourColor Ink"},
+        {i18n::Tr("型号", "Model"), "FourColor-Beta1.0"},
         {i18n::Tr("固件版本", "Firmware Version"), firmware_version_.empty() ? i18n::Tr("未知", "Unknown") : firmware_version_},
         {i18n::Tr("硬件版本", "Hardware Version"), chip_model_.empty() ? "ESP32-S3" : chip_model_},
         {i18n::Tr("MAC地址", "MAC Address"), mac_address_.empty() ? i18n::Tr("未读取", "Not read") : mac_address_},
-        {i18n::Tr("官方网站", "Website"), "blog.lazyyoun.xyz"},
     };
     const int row_h = kAboutRowHeight;
     int y = dialog_y + titlebar_h + 12;

@@ -1,4 +1,4 @@
-# Youn Ink Four Color
+# FourColor Ink
 
 This is a personal AI assistant project for ESP32-S3 e-ink devices. The current mainline consists of three parts: ESP32 firmware, a Python backend service, and photo/todo/device management pages.
 
@@ -6,7 +6,7 @@ The focus of this project is not a generic npm package, but a system that actual
 
 ## 2BP Four-Color Image Pipeline
 
-![Youn Ink Four Color 2BP BWRY architecture](README-2bp-architecture.png)
+![FourColor Ink 2BP BWRY architecture](README-2bp-architecture.png)
 
 Album images can enter the server either from a PC/NAS management console or from the device's AP page, and are converted to `2BP BWRY` (black, white, red, yellow) before being pushed over Wi-Fi to the ESP32-S3 four-color e-ink screen. This repo's 2BP four-color pipeline is maintained independently from NOTE4's 4BP black/white grayscale album: panel colors, pixel formats, and refresh drivers all differ.
 
