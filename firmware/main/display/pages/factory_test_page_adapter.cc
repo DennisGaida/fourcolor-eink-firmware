@@ -24,11 +24,11 @@ constexpr int kStepCount = 7;
 const char* StepName(int index) {
     switch (index) {
         case 0: return "RF";
-        case 1: return i18n::Tr("音频", "Audio");
+        case 1: return i18n::Tr(i18n::StringId::kAudio);
         case 2: return "RTC";
-        case 3: return i18n::Tr("充电", "Charging");
+        case 3: return i18n::Tr(i18n::StringId::kCharging);
         case 4: return "LED";
-        case 5: return i18n::Tr("按键", "Button");
+        case 5: return i18n::Tr(i18n::StringId::kButton);
         case 6: return "NFC";
         default: return "";
     }
@@ -169,7 +169,7 @@ void FactoryTestPageAdapter::Build() {
     if (body_font) {
         lv_obj_set_style_text_font(header_title, body_font, 0);
     }
-    lv_label_set_text(header_title, i18n::Tr("FT测试", "FT Test"));
+    lv_label_set_text(header_title, i18n::Tr(i18n::StringId::kFtTest));
     lv_obj_align(header_title, LV_ALIGN_LEFT_MID, 0, 0);
 
     header_step_label_ = lv_label_create(header);

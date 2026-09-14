@@ -32,14 +32,14 @@ constexpr int kSettingsHttpServerIndex = 7;
 constexpr int kSettingsLanIpIndex = 8;
 
 std::string FormatMinutesLabel(int minutes) {
-    if (minutes <= 0) return i18n::Tr("关闭", "Off");
+    if (minutes <= 0) return i18n::Tr(i18n::StringId::kOff);
     char buf[16];
     snprintf(buf, sizeof(buf), "%dmin", minutes);
     return buf;
 }
 
 const char* FormatMinutesLogLabel(int minutes) {
-    return minutes <= 0 ? i18n::Tr("关闭", "Off") : i18n::Tr("开启", "On");
+    return minutes <= 0 ? i18n::Tr(i18n::StringId::kOff) : i18n::Tr(i18n::StringId::kOn);
 }
 
 int NextSlideshowInterval(int current) {
@@ -56,7 +56,7 @@ void UpdateWifiSettingsItem(rawdraw::SettingsRenderer* renderer, bool connected,
                             const char* value = nullptr) {
     if (!renderer) return;
     renderer->UpdateChecked(kSettingsWifiIndex, connected);
-    renderer->UpdateItem(kSettingsWifiIndex, value ? value : (connected ? i18n::Tr("已连接", "Connected") : i18n::Tr("未连接", "Disconnected")));
+    renderer->UpdateItem(kSettingsWifiIndex, value ? value : (connected ? i18n::Tr(i18n::StringId::kConnected) : i18n::Tr(i18n::StringId::kDisconnected)));
 }
 
 void UpdateHttpServerSettingsItem(rawdraw::SettingsRenderer* renderer, bool running,
@@ -68,7 +68,7 @@ void UpdateHttpServerSettingsItem(rawdraw::SettingsRenderer* renderer, bool runn
     } else if (!ip_address.empty()) {
         value = ip_address;
     } else {
-        value = running ? i18n::Tr("已开启", "On") : i18n::Tr("已关闭", "Off");
+        value = running ? i18n::Tr(i18n::StringId::kOn2) : i18n::Tr(i18n::StringId::kOff2);
     }
     renderer->UpdateChecked(kSettingsHttpServerIndex, running);
     renderer->UpdateItem(kSettingsHttpServerIndex, value);
@@ -76,7 +76,7 @@ void UpdateHttpServerSettingsItem(rawdraw::SettingsRenderer* renderer, bool runn
 
 void UpdateLanIpSettingsItem(rawdraw::SettingsRenderer* renderer, const std::string& ip_address) {
     if (!renderer) return;
-    renderer->UpdateItem(kSettingsLanIpIndex, ip_address.empty() ? i18n::Tr("未获取", "Not obtained") : ip_address);
+    renderer->UpdateItem(kSettingsLanIpIndex, ip_address.empty() ? i18n::Tr(i18n::StringId::kNotObtained) : ip_address);
 }
 
 void StartSntpClockSyncOnce() {
@@ -169,11 +169,11 @@ void Application::Initialize() {
         rawdraw_ui_manager_->SetGallerySlideshowIntervalMinutes(slideshow_interval);
 
         std::vector<rawdraw::SettingsItemDef> items;
-        items.push_back({i18n::Tr("系统", "System"), "", nullptr, rawdraw::SettingsItemType::Section, false});
-        items.push_back({i18n::Tr("重启", "Restart"), i18n::Tr("执行", "Run"), nullptr, rawdraw::SettingsItemType::Action, false,
+        items.push_back({i18n::Tr(i18n::StringId::kSystem), "", nullptr, rawdraw::SettingsItemType::Section, false});
+        items.push_back({i18n::Tr(i18n::StringId::kRestart), i18n::Tr(i18n::StringId::kRun), nullptr, rawdraw::SettingsItemType::Action, false,
                          []() { esp_restart(); }});
-        items.push_back({i18n::Tr("语言", "Language"),
-                         i18n::GetLanguage() == i18n::Language::kEnUS ? "English" : "中文",
+        items.push_back({i18n::Tr(i18n::StringId::kLanguage),
+                         i18n::Tr(i18n::StringId::kLanguageDisplayName),
                          nullptr, rawdraw::SettingsItemType::Action, false,
                          []() {
                              // Rebuilding every settings label/value in place would
@@ -186,8 +186,8 @@ void Application::Initialize() {
                                  ? i18n::Language::kZhCN : i18n::Language::kEnUS);
                              esp_restart();
                          }});
-        items.push_back({i18n::Tr("相册", "Gallery"), "", nullptr, rawdraw::SettingsItemType::Section, false});
-        items.push_back({i18n::Tr("轮播间隔", "Slideshow Interval"), FormatMinutesLabel(slideshow_interval), nullptr,
+        items.push_back({i18n::Tr(i18n::StringId::kGallery), "", nullptr, rawdraw::SettingsItemType::Section, false});
+        items.push_back({i18n::Tr(i18n::StringId::kSlideshowInterval), FormatMinutesLabel(slideshow_interval), nullptr,
                          rawdraw::SettingsItemType::Action, false,
                          [this, sr]() {
                              Settings nvs(kGalleryNamespace, true);
@@ -207,8 +207,8 @@ void Application::Initialize() {
                              }
                              sr->UpdateItem(kSettingsSlideshowIndex, FormatMinutesLabel(next));
                          }});
-        items.push_back({i18n::Tr("网络", "Network"), "", nullptr, rawdraw::SettingsItemType::Section, false});
-        items.push_back({"Wi-Fi", i18n::Tr("未连接", "Disconnected"), nullptr, rawdraw::SettingsItemType::Checkbox, false,
+        items.push_back({i18n::Tr(i18n::StringId::kNetwork), "", nullptr, rawdraw::SettingsItemType::Section, false});
+        items.push_back({"Wi-Fi", i18n::Tr(i18n::StringId::kDisconnected), nullptr, rawdraw::SettingsItemType::Checkbox, false,
                          [this, sr]() {
                              auto& wifi = WifiManager::GetInstance();
                              if (wifi_connected_.load(std::memory_order_acquire) || wifi.IsConnected()) {
@@ -223,12 +223,12 @@ void Application::Initialize() {
                                  UpdateLanIpSettingsItem(sr, "");
                              } else {
                                  ESP_LOGI(kTag, "Wi-Fi setting toggled ON");
-                                 UpdateWifiSettingsItem(sr, false, i18n::Tr("连接中", "Connecting"));
+                                 UpdateWifiSettingsItem(sr, false, i18n::Tr(i18n::StringId::kConnecting));
                                  wifi.StartStation();
                              }
                              UpdateStatusBarForUi();
                          }});
-        items.push_back({i18n::Tr("局域网服务", "LAN Server"), i18n::Tr("已关闭", "Off"), nullptr, rawdraw::SettingsItemType::Checkbox, false,
+        items.push_back({i18n::Tr(i18n::StringId::kLanServer), i18n::Tr(i18n::StringId::kOff2), nullptr, rawdraw::SettingsItemType::Checkbox, false,
                          [this, sr]() {
                              if (!rawdraw_ui_manager_) return;
                              if (rawdraw_ui_manager_->IsLanHttpServerRunning()) {
@@ -246,14 +246,14 @@ void Application::Initialize() {
                              auto& wifi = WifiManager::GetInstance();
                              if (!wifi_connected_.load(std::memory_order_acquire) && !wifi.IsConnected()) {
                                  ESP_LOGW(kTag, "LAN HTTP server requires WiFi connection");
-                                 UpdateHttpServerSettingsItem(sr, false, i18n::Tr("需先连接WiFi", "Connect WiFi first"));
+                                 UpdateHttpServerSettingsItem(sr, false, i18n::Tr(i18n::StringId::kConnectWifiFirst));
                                  UpdateStatusBarForUi();
                                  return;
                              }
                              const std::string ip = wifi.GetIpAddress();
                              if (ip.empty()) {
                                  ESP_LOGW(kTag, "LAN HTTP server requires station IP");
-                                 UpdateHttpServerSettingsItem(sr, false, i18n::Tr("等待IP", "Waiting for IP"));
+                                 UpdateHttpServerSettingsItem(sr, false, i18n::Tr(i18n::StringId::kWaitingForIp));
                                  UpdateStatusBarForUi();
                                  return;
                              }
@@ -268,15 +268,15 @@ void Application::Initialize() {
                              UpdateLanIpSettingsItem(sr, started ? ip : WifiManager::GetInstance().GetIpAddress());
                              UpdateStatusBarForUi();
                          }});
-        items.push_back({i18n::Tr("局域网IP", "LAN IP"), i18n::Tr("未获取", "Not obtained"), nullptr, rawdraw::SettingsItemType::Normal, false});
-        items.push_back({i18n::Tr("省电模式", "Power Saving"), i18n::Tr("手动进入", "Enter Manually"), nullptr,
+        items.push_back({i18n::Tr(i18n::StringId::kLanIp), i18n::Tr(i18n::StringId::kNotObtained), nullptr, rawdraw::SettingsItemType::Normal, false});
+        items.push_back({i18n::Tr(i18n::StringId::kPowerSaving), i18n::Tr(i18n::StringId::kEnterManually), nullptr,
                          rawdraw::SettingsItemType::Action, false,
                          [this]() {
                              ESP_LOGI(kTag, "Manual sleep requested from settings");
                              EnterManualSleep();
                          }});
-        items.push_back({i18n::Tr("关于", "About"), "", nullptr, rawdraw::SettingsItemType::Section, false});
-        items.push_back({i18n::Tr("固件", "Firmware"), PROJECT_VER, nullptr, rawdraw::SettingsItemType::Normal, false});
+        items.push_back({i18n::Tr(i18n::StringId::kAbout), "", nullptr, rawdraw::SettingsItemType::Section, false});
+        items.push_back({i18n::Tr(i18n::StringId::kFirmware), PROJECT_VER, nullptr, rawdraw::SettingsItemType::Normal, false});
         sr->SetItems(items);
         sr->SetFirmwareVersion("v" PROJECT_VER);
 

@@ -197,25 +197,26 @@ void DrawMiniTimeText(uint8_t* fb, int width, int x, int y, const char* text, ra
 
 const char* RawDrawUiManager::GetPageTitle(RawDrawPageId page) {
     using i18n::Tr;
+    using i18n::StringId;
     switch (page) {
-        case RawDrawPageId::Chat:     return Tr("对话", "Chat");
-        case RawDrawPageId::Ebook:    return Tr("电子书", "Ebook");
-        case RawDrawPageId::Wifi:     return Tr("WiFi状态", "WiFi Status");
-        case RawDrawPageId::Settings: return Tr("设置", "Settings");
-        case RawDrawPageId::Gallery:  return Tr("相册", "Gallery");
-        case RawDrawPageId::Weather:  return Tr("天气", "Weather");
-        case RawDrawPageId::News:     return Tr("热点", "News");
-        case RawDrawPageId::WeatherDetail: return Tr("天气详情", "Weather Detail");
-        case RawDrawPageId::PhotoDetail: return Tr("照片详情", "Photo Detail");
-        case RawDrawPageId::LifeBar:  return Tr("人生进度", "Life Progress");
-        case RawDrawPageId::Almanac:  return Tr("老黄历", "Almanac");
-        case RawDrawPageId::Log:      return Tr("日志", "Log");
-        case RawDrawPageId::YearProgress: return Tr("年度进度", "Year Progress");
-        case RawDrawPageId::Calendar:   return Tr("日历", "Calendar");
-        case RawDrawPageId::FontDebug:  return Tr("对齐测试", "Alignment Test");
-        case RawDrawPageId::FontMetrics: return Tr("字体指标", "Font Metrics");
-        case RawDrawPageId::APTransfer: return Tr("传图模式", "Transfer Mode");
-        default:               return Tr("未知", "Unknown");
+        case RawDrawPageId::Chat:     return Tr(StringId::kChat);
+        case RawDrawPageId::Ebook:    return Tr(StringId::kEbook);
+        case RawDrawPageId::Wifi:     return Tr(StringId::kWifiStatus);
+        case RawDrawPageId::Settings: return Tr(StringId::kSettings);
+        case RawDrawPageId::Gallery:  return Tr(StringId::kGallery);
+        case RawDrawPageId::Weather:  return Tr(StringId::kWeather);
+        case RawDrawPageId::News:     return Tr(StringId::kNews);
+        case RawDrawPageId::WeatherDetail: return Tr(StringId::kWeatherDetail);
+        case RawDrawPageId::PhotoDetail: return Tr(StringId::kPhotoDetail);
+        case RawDrawPageId::LifeBar:  return Tr(StringId::kLifeProgress);
+        case RawDrawPageId::Almanac:  return Tr(StringId::kAlmanac);
+        case RawDrawPageId::Log:      return Tr(StringId::kLog);
+        case RawDrawPageId::YearProgress: return Tr(StringId::kYearProgress);
+        case RawDrawPageId::Calendar:   return Tr(StringId::kCalendar);
+        case RawDrawPageId::FontDebug:  return Tr(StringId::kAlignmentTest);
+        case RawDrawPageId::FontMetrics: return Tr(StringId::kFontMetrics);
+        case RawDrawPageId::APTransfer: return Tr(StringId::kTransferMode);
+        default:               return Tr(StringId::kUnknown);
     }
 }
 
@@ -308,7 +309,7 @@ RawDrawUiManager::RawDrawUiManager()
     ap_transfer_server_->SetSettingsChangedCallback([this](int slideshow_interval_minutes) {
         SetGallerySlideshowIntervalMinutes(slideshow_interval_minutes);
         UpdateSettingsItem(3, slideshow_interval_minutes <= 0
-            ? std::string(i18n::Tr("关闭", "Off"))
+            ? std::string(i18n::Tr(i18n::StringId::kOff))
             : std::to_string(slideshow_interval_minutes) + "min");
         RequestActivePageRefresh();
     });
@@ -682,12 +683,12 @@ void RawDrawUiManager::ShowWifiConfigPage(const std::string& ssid,
                                           const std::string& password,
                                           const std::string& url) {
     if (ap_transfer_renderer_) {
-        ap_transfer_renderer_->SetInstructionContent(i18n::Tr("WiFi 配网", "WiFi Setup"),
+        ap_transfer_renderer_->SetInstructionContent(i18n::Tr(i18n::StringId::kWifiSetup),
                                                      ssid.empty() ? "ZecTrix" : ssid,
                                                      password,
                                                      url.empty() ? "http://192.168.4.1" : url,
-                                                     i18n::Tr("连接热点后打开页面配置 WiFi", "Connect to the hotspot, then open the page to configure WiFi"),
-                                                     i18n::Tr("长按 BOOT 退出", "Hold BOOT to exit"));
+                                                     i18n::Tr(i18n::StringId::kConnectToTheHotspotThenOpenThePageToConfigureWifi),
+                                                     i18n::Tr(i18n::StringId::kHoldBootToExit));
         ap_transfer_renderer_->SetState(rawdraw::ApTransferRenderer::kWaitingForConnection,
                                         "192.168.4.1");
     }
@@ -886,7 +887,7 @@ void RawDrawUiManager::RenderAll(uint8_t* fb, int width, int height) {
     }
     if (current_page_ == RawDrawPageId::Calendar && calendar_renderer_) {
         char buf[32];
-        snprintf(buf, sizeof(buf), i18n::Tr("%d年%d月 ← →", "%d/%d ← →"),
+        snprintf(buf, sizeof(buf), i18n::Tr(i18n::StringId::kCalendarNavTitle),
                  calendar_renderer_->GetYear(), calendar_renderer_->GetMonth());
         status_bar_data_.central_text = buf;
     }
@@ -993,9 +994,8 @@ void RawDrawUiManager::DrawStatusBar(uint8_t* fb, int width, int height) {
             } else {
                 int y = 0, m = 0, d = 0;
                 sscanf(status_bar_data_.server_date.c_str(), "%d-%d-%d", &y, &m, &d);
-                date_str = i18n::GetLanguage() == i18n::Language::kEnUS
-                    ? std::to_string(m) + "/" + std::to_string(d)
-                    : std::to_string(m) + "月" + std::to_string(d) + "日";
+                date_str = std::to_string(m) + i18n::Tr(i18n::StringId::kDateShortMonthSep) +
+                    std::to_string(d) + i18n::Tr(i18n::StringId::kDateShortDaySep);
             }
             if (!status_bar_data_.server_weekday.empty()) {
                 date_str += " " + status_bar_data_.server_weekday;
@@ -1154,7 +1154,7 @@ void RawDrawUiManager::DrawQuickSwitchOverlay(uint8_t* fb, int width, int height
                                  Style::kBorderRadiusMD, shadow_style);
     rawdraw::DrawStyledRoundRect(fb, width, height, {overlay_x, overlay_y, overlay_w, overlay_h},
                                  Style::kBorderRadiusMD, modal_style);
-    const char* title = i18n::Tr("快速切换", "Quick Switch");
+    const char* title = i18n::Tr(i18n::StringId::kQuickSwitch);
     const int title_w = rawdraw::MeasureTextWidth(title, title_font);
     rawdraw::DrawStyledText(fb, width, overlay_x + (overlay_w - title_w) / 2,
                             rawdraw::InkCenteredTextTopYInBox(title_font, title, overlay_y, titlebar_h, 0),
@@ -1230,7 +1230,7 @@ void RawDrawUiManager::DrawQuickSwitchOverlay(uint8_t* fb, int width, int height
         rawdraw::DrawRect(fb, width, {sb_x, thumb_y, sb_w, thumb_h}, selected_style.border);
     }
 
-    const char* hint = i18n::Tr("UP/DN 选择  BOOT 进入", "UP/DN select  BOOT enter");
+    const char* hint = i18n::Tr(i18n::StringId::kUpDnSelectBootEnter);
     rawdraw::DrawHLine(fb, width, overlay_y + overlay_h - 24, overlay_x + 14, overlay_x + overlay_w - 14, border_style.border);
     rawdraw::DrawStyledText(fb, width, overlay_x + 18,
                             rawdraw::InkCenteredTextTopYInBox(font, hint, overlay_y + overlay_h - 24, 24, 0),

@@ -183,9 +183,9 @@ static bool ParseForecastJson(const char* json, WeatherData* out) {
     // Looked up fresh each call (not static) so the label reflects the
     // language active at fetch time rather than freezing at first call.
     const char* labels[3] = {
-        i18n::Tr("今天", "Today"),
-        i18n::Tr("明天", "Tomorrow"),
-        i18n::Tr("后天", "Day After"),
+        i18n::Tr(i18n::StringId::kToday),
+        i18n::Tr(i18n::StringId::kTomorrow),
+        i18n::Tr(i18n::StringId::kDayAfter),
     };
     int index = 0;
     cJSON* day = nullptr;
