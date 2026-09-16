@@ -63,7 +63,20 @@ static PresenceEventTier ParseTier(const char* text) {
     if (!text) return PresenceEventTier::kInternal;
     if (strcmp(text, "customer") == 0) return PresenceEventTier::kCustomer;
     if (strcmp(text, "leadership") == 0) return PresenceEventTier::kLeadership;
+    if (strcmp(text, "solo") == 0) return PresenceEventTier::kSolo;
     return PresenceEventTier::kInternal;
+}
+
+// "YYYY-MM-DD" for local today, or empty on an unsynced RTC — used to pick
+// today's entry out of the /calendar/today "days" array.
+static std::string TodayDateString() {
+    time_t now = time(nullptr);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+    if (tm_now.tm_year + 1900 < 2020) return "";
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday);
+    return buf;
 }
 
 // ============================================================
@@ -80,7 +93,32 @@ static bool ParseCalendarJson(const char* json, PresenceStatus* out) {
         return false;
     }
 
-    cJSON* events = cJSON_GetObjectItem(root, "events");
+    // Contract is now multi-day ("days": [{date, events}, ...]) so a single
+    // fetch can also feed a future agenda view; today only consumes the one
+    // entry matching the device's local date. Falls back to days[0] if
+    // nothing matches (e.g. RTC not synced yet or a TZ mismatch with the
+    // server) rather than rendering an empty page.
+    cJSON* days = cJSON_GetObjectItem(root, "days");
+    cJSON* today_day = nullptr;
+    if (cJSON_IsArray(days)) {
+        const std::string today = TodayDateString();
+        cJSON* day = nullptr;
+        cJSON_ArrayForEach(day, days) {
+            cJSON* date = cJSON_GetObjectItem(day, "date");
+            if (!today.empty() && cJSON_IsString(date) && today == date->valuestring) {
+                today_day = day;
+                break;
+            }
+        }
+        if (!today_day) {
+            today_day = cJSON_GetArrayItem(days, 0);
+            if (today_day) {
+                ESP_LOGW(kTag, "No day matched local date '%s', using first day in response", today.c_str());
+            }
+        }
+    }
+
+    cJSON* events = today_day ? cJSON_GetObjectItem(today_day, "events") : nullptr;
     if (cJSON_IsArray(events)) {
         std::vector<PresenceEvent> parsed;
         cJSON* item = nullptr;
@@ -98,13 +136,16 @@ static bool ParseCalendarJson(const char* json, PresenceStatus* out) {
             ev.end_minutes = end_min;
             ev.title = (cJSON_IsString(title) && title->valuestring) ? title->valuestring : "";
             ev.tier = ParseTier(cJSON_IsString(tier) ? tier->valuestring : nullptr);
+            // "participants"/"participant_count" aren't consumed yet — no
+            // renderer surfaces them — but cJSON parsing ignores unread
+            // fields, so they're harmless to leave in the payload.
             parsed.push_back(std::move(ev));
         }
         std::sort(parsed.begin(), parsed.end(),
                   [](const PresenceEvent& a, const PresenceEvent& b) { return a.start_minutes < b.start_minutes; });
         out->events = std::move(parsed);
     }
-    // No "events" key at all (vs. an explicit empty array) — leave
+    // No matching day / no "events" key (vs. an explicit empty array) — leave
     // out->events untouched rather than treating a malformed/partial
     // response as "no events today".
 
@@ -144,7 +185,13 @@ static bool ParseLiveJson(const char* json, PresenceStatus* out) {
 // HTTP client
 // ============================================================
 
-static char s_response_buf[4096] = {0};
+// 8KB: the multi-day /calendar/today contract (days[].events[] with
+// participants/participant_count strings) runs bigger than the old
+// single-day shape — a busy single day with long titles was already flirting
+// with 4KB. We don't expect more than today+tomorrow in `days`, but a
+// heavier meeting day (more events, long titles/participant lists) is
+// plausible, so size for that rather than day count.
+static char s_response_buf[8192] = {0};
 static int s_response_len = 0;
 
 static esp_err_t HttpEventHandler(esp_http_client_event_t* evt) {

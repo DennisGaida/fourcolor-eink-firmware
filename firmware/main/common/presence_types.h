@@ -16,7 +16,12 @@
 // How much this event matters to the person standing at the door: drives the
 // fill style on the detail-face day grid (outline/yellow-rule/solid-red) and
 // the human sub-line on the default face ("come in" / "knock" / "quiet").
+// Order matters: busy_light_renderer.cc's ActiveEvent() picks the highest
+// concurrent tier by comparing the enum's underlying int, so kSolo (no other
+// attendees — e.g. "Lunch", a personal block) must stay the lowest value,
+// below kInternal.
 enum class PresenceEventTier {
+    kSolo,        // just you, no other attendees — outline, same as internal
     kInternal,    // colleague meeting — outline, "come in"
     kLeadership,  // meeting with leadership — yellow fill + heavy rule, "knock"
     kCustomer,    // external/customer call — solid red, "quiet please"

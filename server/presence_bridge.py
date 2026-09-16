@@ -2,34 +2,51 @@
 """
 presence_bridge.py — HTTP bridge for the busy-light day-view firmware page.
 
-Serves a single GET endpoint the ESP32 polls every 5 minutes:
+Serves the same two GET endpoints as server/mock_presence_server.py (see
+that file for the full contract docs), backed by real Home Assistant data
+instead of hardcoded mock values:
 
-    GET /presence
+    GET /calendar/today   — today + tomorrow, near-static within a day
     {
-      "status": "ok",
-      "generated_at": "2026-09-12T14:32:00+02:00",
-      "in_call": false,
-      "webcam_active": false,
-      "presenting": false,
-      "events": [
-        {"start": "09:00", "end": "09:30", "title": "Standup", "tier": "internal"},
-        {"start": "10:00", "end": "11:30", "title": "Design review", "tier": "internal"}
+      "generated_at": "2026-09-16T11:46:33+00:00",
+      "time_zone": "W. Europe Standard Time",
+      "days": [
+        {"date": "2026-09-16", "events": [
+          {"start": "09:00", "end": "09:30", "title": "Standup", "tier": "internal"}
+        ]},
+        {"date": "2026-09-17", "events": [...]}
       ]
     }
 
-`tier` is one of "internal" / "leadership" / "customer" (defaults to
-"internal" if omitted) and drives the door-fill style on the firmware's
-detail-face day grid.
+    GET /live              — presence state, can change second-to-second
+    {
+      "updated_at": "2026-09-16T10:32:05+02:00",
+      "isPresenting": false,
+      "isInCall": false,
+      "isWebcamActive": false
+    }
+
+`tier` is one of "solo" / "internal" / "leadership" / "customer" and drives
+the door-fill style on the firmware's detail-face day grid ("solo" renders
+the same as "internal" — it's carried through for parity with the real
+Microsoft Graph-backed feed, not because HA can tell them apart yet).
 
 `start`/`end` are local "HH:MM" strings — no timezone math needed on-device.
-On any internal error this still returns HTTP 200 with "status" != "ok" so the
-firmware's HttpGet() succeeds and ParsePresenceJson() falls back to keeping
-its last-known-good data (see firmware/main/common/presence_api.cc).
+This bridge doesn't emit `participants`/`participant_count`: the firmware
+doesn't read them yet, and Home Assistant's calendar API doesn't expose
+attendee data to fabricate them from (unlike the real Graph-backed feed the
+mock server mirrors) — omitting the fields entirely is safe, since cJSON
+parsing on the firmware side just skips keys it doesn't ask for.
+
+On any internal error, each endpoint still returns HTTP 200 with an empty
+`days`/omitted live fields so the firmware's HttpGet() succeeds and
+ParseCalendarJson()/ParseLiveJson() fall back to keeping last-known-good
+data (see firmware/main/common/presence_api.cc) rather than erroring loudly.
 
 This sketch queries Home Assistant's REST API for two binary sensors
 (mirroring the AtomS3R busy-light project's teams_in_call / webcam_active
-sensors) plus HA's calendar entity for today's events. Swap
-`fetch_presence()` for a Microsoft Graph call if you'd rather skip HA.
+sensors) plus HA's calendar entity for today's and tomorrow's events. Swap
+`fetch_calendar_days()` for a Microsoft Graph call if you'd rather skip HA.
 
 Event titles are redacted to "Busy" here — do that redaction in this bridge,
 not in the firmware, so the real subject never has to leave your network.
@@ -62,12 +79,18 @@ HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
 HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.webcam_active")
 HA_PRESENTING_SENSOR = os.environ.get("HA_PRESENTING_SENSOR", "")
 HA_CALENDAR_ENTITY = os.environ.get("HA_CALENDAR_ENTITY", "")
+HA_TIME_ZONE = os.environ.get("HA_TIME_ZONE", "W. Europe Standard Time")
 # Comma-separated, case-insensitive substrings matched against the raw event
 # title (before --redact-titles strips it) to pick the door-fill tier the
 # firmware renders. No HA signal maps cleanly to "how important is this
-# meeting", so this is a keyword guess — tune the lists for your calendar.
+# meeting" or "is anyone else actually on this", so all three lists (customer/
+# leadership/solo) are keyword guesses — tune them for your calendar. The
+# real Microsoft Graph-backed feed derives "solo" from actual attendee count;
+# HA's calendar API doesn't expose attendees, so solo here is a title guess
+# same as the other two tiers, not a real headcount.
 HA_CUSTOMER_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_CUSTOMER_KEYWORDS", "customer,client").split(",") if k.strip()]
 HA_LEADERSHIP_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_LEADERSHIP_KEYWORDS", "ceo,cfo,coo,leadership,board").split(",") if k.strip()]
+HA_SOLO_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_SOLO_KEYWORDS", "lunch,focus,personal,doctor,dentist").split(",") if k.strip()]
 
 
 def classify_tier(title: str) -> str:
@@ -76,6 +99,8 @@ def classify_tier(title: str) -> str:
         return "customer"
     if any(k in lowered for k in HA_LEADERSHIP_KEYWORDS):
         return "leadership"
+    if any(k in lowered for k in HA_SOLO_KEYWORDS):
+        return "solo"
     return "internal"
 
 
@@ -99,11 +124,9 @@ def fetch_binary_sensor(entity_id: str) -> bool:
         return False
 
 
-def fetch_calendar_events(redact_titles: bool) -> list:
+def fetch_calendar_day(day_start: datetime.datetime, redact_titles: bool) -> list:
     if not HA_CALENDAR_ENTITY:
         return []
-    now = datetime.datetime.now().astimezone()
-    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + datetime.timedelta(days=1)
     start_param = day_start.isoformat()
     end_param = day_end.isoformat()
@@ -134,33 +157,56 @@ def fetch_calendar_events(redact_titles: bool) -> list:
     return events
 
 
-def fetch_presence(redact_titles: bool) -> dict:
+def build_calendar_today(redact_titles: bool) -> dict:
+    today_start = datetime.datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + datetime.timedelta(days=1)
     return {
-        "status": "ok",
         "generated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "in_call": fetch_binary_sensor(HA_CALL_SENSOR),
-        "webcam_active": fetch_binary_sensor(HA_WEBCAM_SENSOR),
-        "presenting": fetch_binary_sensor(HA_PRESENTING_SENSOR),
-        "events": fetch_calendar_events(redact_titles),
+        "time_zone": HA_TIME_ZONE,
+        "days": [
+            {"date": today_start.date().isoformat(), "events": fetch_calendar_day(today_start, redact_titles)},
+            {"date": tomorrow_start.date().isoformat(), "events": fetch_calendar_day(tomorrow_start, redact_titles)},
+        ],
+    }
+
+
+def build_live() -> dict:
+    return {
+        "updated_at": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+        "isPresenting": fetch_binary_sensor(HA_PRESENTING_SENSOR),
+        "isInCall": fetch_binary_sensor(HA_CALL_SENSOR),
+        "isWebcamActive": fetch_binary_sensor(HA_WEBCAM_SENSOR),
     }
 
 
 def make_handler(redact_titles: bool):
+    routes = {
+        "/calendar/today": lambda: build_calendar_today(redact_titles),
+        "/live": build_live,
+    }
+
     class PresenceHandler(BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
             logger.info("%s - %s", self.address_string(), fmt % args)
 
         def do_GET(self):
-            if self.path.rstrip("/") != "/presence":
+            builder = routes.get(self.path.rstrip("/"))
+            if builder is None:
                 self.send_response(404)
                 self.end_headers()
                 return
 
             try:
-                payload = fetch_presence(redact_titles)
-            except Exception as e:
-                logger.exception("Unexpected error building presence payload")
-                payload = {"status": "error", "message": str(e)}
+                payload = builder()
+            except Exception:
+                logger.exception("Unexpected error building %s payload", self.path)
+                # Empty-but-well-formed body: the firmware parses whichever
+                # keys are present and keeps last-known-good for the rest
+                # (see ParseCalendarJson/ParseLiveJson in presence_api.cc) —
+                # an HTTP error status would achieve the same fallback, but
+                # this also surfaces in --redact-titles logs without a scary
+                # non-200 in access logs downstream.
+                payload = {}
 
             body = json.dumps(payload).encode("utf-8")
             self.send_response(200)

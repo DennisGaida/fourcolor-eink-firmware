@@ -117,7 +117,7 @@ bool DebugTierIsBusy(BusyLightRenderer::DebugTier tier) {
 
 // Whether this tier is important enough to color the top status band red.
 bool IsElevated(PresenceEventTier tier) {
-    return tier != PresenceEventTier::kInternal;
+    return tier != PresenceEventTier::kInternal && tier != PresenceEventTier::kSolo;
 }
 
 // Effective header status after folding in the debug override. Shared by
