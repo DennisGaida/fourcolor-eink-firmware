@@ -74,8 +74,15 @@ static std::string TodayDateString() {
     struct tm tm_now;
     localtime_r(&now, &tm_now);
     if (tm_now.tm_year + 1900 < 2020) return "";
-    char buf[16];
-    snprintf(buf, sizeof(buf), "%04d-%02d-%02d", tm_now.tm_year + 1900, tm_now.tm_mon + 1, tm_now.tm_mday);
+    // Unsigned + %u, not %d: matches Clock::GetDateString's "iso" format —
+    // -Werror=format-truncation flags the signed/%d version because tm_year
+    // is a plain int with no compiler-visible upper bound, even though the
+    // 2020 check above already rules out a truncating value in practice.
+    unsigned int y = static_cast<unsigned int>(tm_now.tm_year + 1900);
+    unsigned int m = static_cast<unsigned int>(tm_now.tm_mon + 1);
+    unsigned int d = static_cast<unsigned int>(tm_now.tm_mday);
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%04u-%02u-%02u", y, m, d);
     return buf;
 }
 
