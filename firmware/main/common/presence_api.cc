@@ -67,24 +67,37 @@ static PresenceEventTier ParseTier(const char* text) {
     return PresenceEventTier::kInternal;
 }
 
-// "YYYY-MM-DD" for local today, or empty on an unsynced RTC — used to pick
-// today's entry out of the /calendar/today "days" array.
-static std::string TodayDateString() {
+// "YYYY-MM-DD" for the local date `days_offset` days from now, or empty on an
+// unsynced RTC — used to pick a "days" entry out of the /calendar/today array.
+// tm_mday += days_offset then mktime() (rather than adding days_offset*86400
+// seconds to the epoch first) so this means "days_offset calendar days from
+// today," not "days_offset*24h from now" — those differ across a DST
+// transition, and mktime() normalizes the resulting tm_mday overflow (e.g.
+// day 32 in a 31-day month rolls into the next month) for free.
+static std::string LocalDateString(int days_offset) {
     time_t now = time(nullptr);
-    struct tm tm_now;
-    localtime_r(&now, &tm_now);
-    if (tm_now.tm_year + 1900 < 2020) return "";
+    struct tm tm_date;
+    localtime_r(&now, &tm_date);
+    if (tm_date.tm_year + 1900 < 2020) return "";
+    if (days_offset != 0) {
+        tm_date.tm_mday += days_offset;
+        tm_date.tm_isdst = -1;  // let mktime figure out DST across the rollover
+        if (mktime(&tm_date) == static_cast<time_t>(-1)) return "";
+    }
     // Unsigned + %u, not %d: matches Clock::GetDateString's "iso" format —
     // -Werror=format-truncation flags the signed/%d version because tm_year
     // is a plain int with no compiler-visible upper bound, even though the
     // 2020 check above already rules out a truncating value in practice.
-    unsigned int y = static_cast<unsigned int>(tm_now.tm_year + 1900);
-    unsigned int m = static_cast<unsigned int>(tm_now.tm_mon + 1);
-    unsigned int d = static_cast<unsigned int>(tm_now.tm_mday);
+    unsigned int y = static_cast<unsigned int>(tm_date.tm_year + 1900);
+    unsigned int m = static_cast<unsigned int>(tm_date.tm_mon + 1);
+    unsigned int d = static_cast<unsigned int>(tm_date.tm_mday);
     char buf[24];
     snprintf(buf, sizeof(buf), "%04u-%02u-%02u", y, m, d);
     return buf;
 }
+
+static std::string TodayDateString() { return LocalDateString(0); }
+static std::string TomorrowDateString() { return LocalDateString(1); }
 
 // ============================================================
 // JSON parsing — one function per resource, each only touches the fields
@@ -155,6 +168,39 @@ static bool ParseCalendarJson(const char* json, PresenceStatus* out) {
     // No matching day / no "events" key (vs. an explicit empty array) — leave
     // out->events untouched rather than treating a malformed/partial
     // response as "no events today".
+
+    // Tomorrow's earliest event start, for the default face's after-17:00
+    // "first meeting tomorrow" line. Unlike today's lookup above, this does
+    // NOT fall back to days[0] when no day matches — days[0] is today, and
+    // presenting today's data as tomorrow's would be actively misleading.
+    // No matching day at all just leaves the previous last-known-good value.
+    if (cJSON_IsArray(days)) {
+        const std::string tomorrow = TomorrowDateString();
+        cJSON* tomorrow_day = nullptr;
+        cJSON* day = nullptr;
+        cJSON_ArrayForEach(day, days) {
+            cJSON* date = cJSON_GetObjectItem(day, "date");
+            if (!tomorrow.empty() && cJSON_IsString(date) && tomorrow == date->valuestring) {
+                tomorrow_day = day;
+                break;
+            }
+        }
+        if (tomorrow_day) {
+            cJSON* tomorrow_events = cJSON_GetObjectItem(tomorrow_day, "events");
+            int32_t earliest = -1;
+            if (cJSON_IsArray(tomorrow_events)) {
+                cJSON* item = nullptr;
+                cJSON_ArrayForEach(item, tomorrow_events) {
+                    cJSON* start = cJSON_GetObjectItem(item, "start");
+                    const int32_t start_min = ParseHhMm(cJSON_IsString(start) ? start->valuestring : nullptr);
+                    if (start_min < 0) continue;
+                    if (earliest < 0 || start_min < earliest) earliest = start_min;
+                }
+            }
+            out->tomorrow_valid = true;
+            out->tomorrow_first_event_minutes = earliest;
+        }
+    }
 
     out->last_updated_unix = time(nullptr);
     out->valid = true;

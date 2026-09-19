@@ -41,4 +41,16 @@ config ZECTRIX_EPD_4COLOR_BOOT_TEST_PATTERN
         Show black/white/red/yellow vertical bars once during display
         initialization so a newly connected 4-color panel can be verified.
 
+config BUSY_LIGHT_DEBUG_CYCLE
+    bool "Enable busy-light UP/DOWN debug status cycling"
+    default n
+    help
+        When enabled, UP click cycles the busy-light default/detail face
+        header through free/internal/leadership/customer, and DOWN click
+        cycles through camera/presenting demo combinations - independent of
+        the real calendar/presence bridge, so every tier and AV combination
+        can be previewed without editing server data. Leave disabled for a
+        real deployment: with it off, the header always reflects the real
+        fetched presence status.
+
 endmenu

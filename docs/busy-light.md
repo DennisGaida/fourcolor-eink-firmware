@@ -4,7 +4,7 @@ This document records where the busy-light feature (office-door presence display
 
 ## Status
 
-Contract-first, not backend-first: the firmware, the mock server, and the JSON contract between them are built and working. No real backend (Microsoft Graph, Home Assistant, Power Automate, ...) is wired up end-to-end yet — `server/presence_bridge.py` is a Home Assistant sketch, not a deployed bridge.
+Contract-first, not backend-first — but the real backend is live now. `server/calendar_bridge.py` is a real bridge (`/calendar/today` against a calendar webhook, `/live` against Home Assistant sensors), verified end-to-end against the actual webhook/HA instance and confirmed on-device (default face correctly showing FREE/CAM OFF against an empty calendar and idle sensors). `kPresenceBridgeEndpoint` in `application.cc` doesn't distinguish mock from real — it's just whatever server happens to be running at that LAN IP/port, so switching between them is an operational choice (which server process is up), not a firmware change. `server/mock_presence_server.py` is kept around for offline dev/demo.
 
 The firmware polls two endpoints, split because the data behind them changes at very different rates (see `firmware/main/common/presence_api.h`):
 
@@ -46,7 +46,7 @@ Field reference:
 | --- | --- |
 | `generated_at` | Full ISO-8601 timestamp with UTC offset — a staleness marker, not used for event timing |
 | `time_zone` | Informational only; the firmware doesn't parse it — the device's own RTC is already set to `Europe/Berlin` (see the clock/NTP setup), and `start`/`end` are plain local `HH:MM` |
-| `days` | List of `{date, events}`. The firmware only consumes the entry whose `date` matches its own local date (`YYYY-MM-DD`), falling back to `days[0]` if nothing matches (e.g. RTC not synced yet, or a TZ mismatch with the server) rather than rendering an empty page. Extra days beyond today are carried through for a possible future agenda view but aren't read yet. |
+| `days` | List of `{date, events}`. The firmware consumes two entries out of this list: the one whose `date` matches its own local date (falling back to `days[0]` if nothing matches — e.g. RTC not synced yet, or a TZ mismatch with the server — rather than rendering an empty page), and the one matching local date + 1 day ("tomorrow"), used only for the default face's end-of-workday footer line (see below). Unlike today, tomorrow has **no** `days[0]`-style fallback: if no entry matches tomorrow's date, the firmware treats that as "unknown" and keeps its previous last-known-good tomorrow summary rather than guessing "no meetings". Any further days beyond that are carried through but not read. |
 | `events[].start` / `events[].end` | Local `"HH:MM"` strings, no timezone math needed on-device |
 | `events[].title` | Event title, shown as-is (or redacted to "Busy" by a bridge, before it ever leaves the source network) |
 | `events[].tier` | One of `solo` / `internal` / `leadership` / `customer`. Drives the door-fill style on the detail-face day grid (outline / outline / yellow-rule / solid-red) and the "come in" / "knock" / "quiet" line on the default face. `solo` (no other attendees — e.g. "Lunch") currently renders identically to `internal`; it exists as a distinct tier for parity with the real feed, not because the renderer treats it specially yet. Unknown/missing tier defaults to `internal`, the least alarming reading. |
@@ -56,6 +56,10 @@ Field reference:
 The `participants`/`participant_count` shape (string-encoded rather than a real array/number) mirrors exactly what the real Microsoft Graph-backed feed sends. The mock server and firmware parser intentionally don't "fix" it into a cleaner shape, so the mock never drifts from what a real bridge would actually have to produce.
 
 Overlapping events (a real calendar can easily have two or three concurrent invites) are handled entirely in the renderer via a greedy 2-column layout with overflow summarized as "+N more" — the contract itself makes no attempt to pre-resolve overlaps or assign priority.
+
+### Tomorrow footer line (default face)
+
+Starting at 17:00 local time, the default face shows one extra line above the "press for today's plan" footer hint: `"First meeting tomorrow at HH:MM"` if tomorrow's day has at least one event, or `"No meetings tomorrow"` if it has none. Before 17:00, or if a fetch hasn't yet resolved a "tomorrow" day (see the `days` field reference above), the line is omitted entirely rather than showing a stale or guessed value. The "interesting" segment — the `HH:MM` time, or "No meetings" — sits in a bold yellow highlight chip sized to the actual text width (so a longer time like `10:30` isn't clipped), matching how importance is carried elsewhere on this page (tier fills, the presenting banner); the surrounding words stay plain weight so the chip is the only thing that draws the eye.
 
 ## Contract: `GET /live`
 
@@ -72,12 +76,15 @@ Straightforward booleans, no tiering. `isPresenting` (screen-share/do-not-distur
 
 ## Servers
 
-Two independent implementations of the same contract, for two different purposes:
+Three independent implementations of the same contract, for three different purposes:
 
 | Script | Purpose |
 | --- | --- |
-| `server/mock_presence_server.py` | Pure mock — returns hardcoded data on every request, edited by hand to try scenarios. No real backend queried. This is what's actually been used for firmware dev so far. |
-| `server/presence_bridge.py` | Sketch of a real bridge, backed by Home Assistant: two binary sensors for call/webcam state, plus HA's calendar API for `/calendar/today`. `tier` is derived from keyword lists matched against the event title (`HA_CUSTOMER_KEYWORDS`, `HA_LEADERSHIP_KEYWORDS`, `HA_SOLO_KEYWORDS`) since HA doesn't expose anything closer to "how important is this meeting" or attendee counts. Never deployed against a real HA instance as part of this project — treat it as a starting point, not a finished bridge. |
+| `server/mock_presence_server.py` | Pure mock — returns hardcoded data on every request, edited by hand to try scenarios. No real backend queried. This is what's actually been used for firmware dev so far, and what the firmware still points at (see below). |
+| `server/calendar_bridge.py` | Real bridge for both endpoints. `/calendar/today` is backed by a calendar webhook — URL and an `x-calendar-secret` header value are read from the `CALENDAR_SOURCE_URL`/`CALENDAR_SOURCE_SECRET` environment variables (never hardcoded, never logged, never committed). Deliberately source-agnostic: it only knows the webhook returns JSON already shaped like this contract, not what tool sits behind it. The upstream response is validated/rebuilt field-by-field rather than blindly proxied. `/live` is backed by Home Assistant: `isInCall`/`isWebcamActive` come from binary sensors (`HA_CALL_SENSOR`/`HA_WEBCAM_SENSOR`), `isPresenting` from comparing a text sensor's state (`HA_TEAMS_STATUS_SENSOR`) against `HA_PRESENTING_STATES`. All four entity IDs are configurable env vars since they depend on whatever publishes them into HA. Falls back to the "nothing going on" defaults if `HA_URL`/`HA_TOKEN` aren't set. |
+| `server/presence_bridge.py` | Alternate all-HA sketch: same two binary sensors for call/webcam state as `calendar_bridge.py`, but also sources `/calendar/today` from HA's calendar API instead of a webhook. `tier` is derived from keyword lists matched against the event title (`HA_CUSTOMER_KEYWORDS`, `HA_LEADERSHIP_KEYWORDS`, `HA_SOLO_KEYWORDS`) since HA doesn't expose anything closer to "how important is this meeting" or attendee counts. Never deployed against a real HA instance as part of this project — treat it as a starting point, not a finished bridge. Superseded by `calendar_bridge.py` for setups that already have a calendar webhook. |
+
+The firmware (`kPresenceBridgeEndpoint` in `firmware/main/application.cc`) is currently pointed at `mock_presence_server.py`, not `calendar_bridge.py` — the switch to real calendar data is a deliberate later step, made once the tomorrow-footer line (see above) has been through a mocked dev/test pass.
 
 Run the mock server:
 
@@ -89,7 +96,6 @@ Point the firmware at it via `presence_api_set_endpoint()`, or by editing `kPres
 
 ## Not yet built
 
-- No real backend integration (Graph, Power Automate, or a deployed HA instance) — `presence_bridge.py` is unverified against live HA data.
-- The poll-vs-push decision for a real backend is still open; battery impact is the deciding factor, not settled yet.
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
 - The device-side HTTP response buffer is fixed at 8KB (`firmware/main/common/presence_api.cc`) — sized for a busy single day with long titles, not for a third `days` entry or an unusually large participant list.
+- UP/DOWN on the detail face scroll the zoomed day-grid window an hour at a time, clamped to the day's 8:00-18:00 bounds; a press that's already at the clamp signals a no-op with a rapid double-blink on the onboard LED (`Board::FlashErrorLed()`) instead of the usual single activity-pulse blink. Resets to auto-centered-on-now whenever the view is toggled. On the default face (or everywhere, when `CONFIG_BUSY_LIGHT_DEBUG_CYCLE` is off), UP/DOWN remain a no-op.

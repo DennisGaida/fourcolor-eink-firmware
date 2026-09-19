@@ -497,10 +497,15 @@ enum class StringId : uint16_t {
     kBusyLightCustomer,
     kBusyLightComeIn,
     kBusyLightPresentingBanner,
-    kBusyLightFooterHint
+    kBusyLightFooterHint,
+    kBusyLightTomorrowFirstMeetingPrefix,
+    kBusyLightTomorrowFirstMeetingSuffix,
+    kBusyLightTomorrowNoMeetingsPrefix,
+    kBusyLightTomorrowNoMeetingsHighlight,
+    kBusyLightTomorrowNoMeetingsSuffix
 };
 
-constexpr size_t kStringCount = 484;
+constexpr size_t kStringCount = 489;
 
 }  // namespace i18n
 

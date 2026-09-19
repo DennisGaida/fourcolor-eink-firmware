@@ -257,6 +257,12 @@ public:
         }
     }
 
+    void FlashErrorLed() override {
+        if (power_ != nullptr) {
+            power_->FlashErrorLed();
+        }
+    }
+
 private:
     static int64_t GetNowMs() {
         return esp_timer_get_time() / 1000;

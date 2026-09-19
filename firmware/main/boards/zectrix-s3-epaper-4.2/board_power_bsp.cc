@@ -41,6 +41,18 @@ void BoardPowerBsp::PowerLedTask(void *arg) {
         }
         gpio_hold_dis((gpio_num_t)GPIO_NUM_3);
         if ((!has_status || (!snap.charging && !snap.full)) &&
+            self->led_error_pending_.exchange(false, std::memory_order_relaxed)) {
+            // Rapid double-blink — visually distinct from the single, slower
+            // activity pulse below, so "input rejected/clamped" doesn't read
+            // as just another ordinary button press.
+            for (int i = 0; i < 2; ++i) {
+                gpio_set_level(GPIO_NUM_3, 0);
+                vTaskDelay(pdMS_TO_TICKS(80));
+                gpio_set_level(GPIO_NUM_3, 1);
+                vTaskDelay(pdMS_TO_TICKS(80));
+            }
+            gpio_hold_en((gpio_num_t)GPIO_NUM_3);
+        } else if ((!has_status || (!snap.charging && !snap.full)) &&
             self->led_activity_pulses_.load(std::memory_order_relaxed) > 0) {
             self->led_activity_pulses_.fetch_sub(1, std::memory_order_relaxed);
             gpio_set_level(GPIO_NUM_3, 0);
@@ -142,4 +154,8 @@ void BoardPowerBsp::SetFactoryLedOverride(bool enabled, bool blink) {
 
 void BoardPowerBsp::FlashActivityLed() {
     led_activity_pulses_.store(1, std::memory_order_relaxed);
+}
+
+void BoardPowerBsp::FlashErrorLed() {
+    led_error_pending_.store(true, std::memory_order_relaxed);
 }

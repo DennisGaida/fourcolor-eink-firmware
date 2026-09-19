@@ -16,6 +16,7 @@
 
 #include "busy_light_renderer.h"
 
+#include "board.h"
 #include "i18n.h"
 
 #include "common/presence_api.h"
@@ -48,6 +49,20 @@ constexpr int kHourEnd = 18;    // 6pm
 constexpr int kHourRows = kHourEnd - kHourStart;
 constexpr int kWindowStartMin = kHourStart * 60;
 constexpr int kWindowEndMin = kHourEnd * 60;
+
+// Detail face's zoomed viewport span and UP/DOWN scroll step — see
+// RenderDetailFace and BusyLightRenderer::ScrollDetailWindow.
+constexpr int kZoomSpanMinutes = 6 * 60;
+constexpr int kDetailScrollStepMinutes = 60;
+
+int ClampWindowStart(int start) {
+    return std::max(kWindowStartMin, std::min(kWindowEndMin - kZoomSpanMinutes, start));
+}
+
+int AutoWindowStart(int now_minutes) {
+    if (now_minutes < 0) return kWindowStartMin;
+    return ClampWindowStart(now_minutes - kZoomSpanMinutes / 2);
+}
 
 struct EventLayout {
     const PresenceEvent* event;
@@ -83,6 +98,7 @@ int MinutesToY(int minutes, int window_start, int window_end, int grid_top, int 
     return grid_top + (clamped - window_start) * grid_h / (window_end - window_start);
 }
 
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
 // Debug/demo cycle for the DOWN button — see BusyLightRenderer::HandleInput.
 // Some entries are intentionally redundant (e.g. "cam off" and "presentation
 // off" both land on cam=false/presenting=false) because the point is to step
@@ -114,15 +130,18 @@ PresenceEventTier DebugTierToPresenceTier(BusyLightRenderer::DebugTier tier) {
 bool DebugTierIsBusy(BusyLightRenderer::DebugTier tier) {
     return tier != BusyLightRenderer::DebugTier::kFree;
 }
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
 
 // Whether this tier is important enough to color the top status band red.
 bool IsElevated(PresenceEventTier tier) {
     return tier != PresenceEventTier::kInternal && tier != PresenceEventTier::kSolo;
 }
 
-// Effective header status after folding in the debug override. Shared by
-// both faces' headers so "ad-hoc call" (free but camera/presenting active —
-// see the design doc's own `adhoc` rule) is computed identically everywhere.
+// Effective header status, folding the real calendar's active event together
+// with live call/webcam/presenting state. Shared by both faces' headers so
+// "ad-hoc call" (nothing on the calendar, but a call/camera/screen-share is
+// live — see the design doc's own `adhoc` rule) is computed identically
+// everywhere.
 struct EffectiveStatus {
     bool busy;
     PresenceEventTier tier;   // meaningful only if busy
@@ -130,16 +149,17 @@ struct EffectiveStatus {
     bool is_adhoc;
 };
 
-EffectiveStatus ComputeEffectiveStatus(BusyLightRenderer::DebugTier debug_tier, bool cam, bool presenting) {
+EffectiveStatus ComputeEffectiveStatus(bool calendar_busy, PresenceEventTier calendar_tier,
+                                        bool in_call, bool webcam_active, bool presenting) {
     EffectiveStatus s;
-    const bool base_busy = DebugTierIsBusy(debug_tier);
-    // Ad-hoc call: nothing on the calendar, but the camera or a screen-share
-    // is live — the design doc treats that as a customer-severity call
+    // Ad-hoc call: nothing on the calendar, but a call/camera/screen-share is
+    // live — the design doc treats that as a customer-severity call
     // ("Ad-hoc call", never silently reads as FREE) rather than pretending
-    // nobody's in the room.
-    s.is_adhoc = !base_busy && (cam || presenting);
-    s.busy = base_busy || s.is_adhoc;
-    s.tier = s.is_adhoc ? PresenceEventTier::kCustomer : DebugTierToPresenceTier(debug_tier);
+    // nobody's in the room. in_call counts here even though it has no
+    // dedicated glyph of its own (that's webcam_active's job below).
+    s.is_adhoc = !calendar_busy && (in_call || webcam_active || presenting);
+    s.busy = calendar_busy || s.is_adhoc;
+    s.tier = s.is_adhoc ? PresenceEventTier::kCustomer : calendar_tier;
     s.band_elevated = presenting || (s.busy && IsElevated(s.tier));
     return s;
 }
@@ -342,6 +362,38 @@ void DrawCameraGlyph(uint8_t* fb, int width, int height, int x, int center_y, bo
     DrawTextBold(fb, width, x + kIconW + kGap, InkCenteredTextTopY(font, label, center_y, 0), label, font, color);
 }
 
+// Yellow-fill "highlight chip" behind bold black text, matching the
+// leadership-tier event fill and the presenting banner: yellow *text*
+// directly on the page background reads with too little contrast on e-ink
+// to be legible, so importance here is carried by the fill instead, same
+// as everywhere else in this renderer. Returns the chip's width so callers
+// can position further text after it. NOT MeasureTextHeight(font): that
+// reads font->line_height, which is 0 in this translation unit (same shim/
+// LVGL layout mismatch called out in DrawScaledText's comment above), and
+// a chip_h of ~4px renders as a thin strike-through line, not a box.
+// text_y is the caller's already-computed shared baseline (see the
+// "one shared y for both segments" comment at the call site) — NOT
+// recomputed here from `text`'s own ink bounds. Different strings have
+// slightly different ink bounds, so centering each chip on its own text
+// independently put boxed and plain segments on the same line a pixel or
+// two off each other's baseline, the same class of bug the shared-y
+// comment already exists to prevent.
+int DrawHighlightChip(uint8_t* fb, int width, int x, int center_y, int text_y, const char* text, const lv_font_t* font) {
+    if (!font || !text || !text[0]) return 0;
+    constexpr int kChipPadX = 4;
+    constexpr int kChipPadY = 3;
+    const TextInkBounds bounds = MeasureTextInkBounds(font, "Ag");
+    const int text_h = bounds.valid ? bounds.height : 12;
+    // +1 for DrawTextBold's double-strike offset, so the bold stroke's
+    // rightmost pixel doesn't land right on (or past) the chip's edge.
+    const int text_w = MeasureTextWidth(text, font) + 1;
+    const int chip_h = text_h + kChipPadY * 2;
+    Rect chip{x, center_y - chip_h / 2, text_w + kChipPadX * 2, chip_h};
+    DrawRect(fb, width, chip, YELLOW);
+    DrawTextBold(fb, width, x + kChipPadX, text_y, text, font, BLACK);
+    return chip.w;
+}
+
 }  // namespace
 
 BusyLightRenderer::BusyLightRenderer()
@@ -401,22 +453,29 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
     // hours at a time and scrolls that window through the day as "now"
     // advances, rather than compressing 7am-7pm onto one screen (which made
     // a 30-minute meeting a couple of pixels tall). "Now" is centered in the
-    // window — deliberately not hour-snapped, since snapping the start to an
-    // hour boundary shoved "now" off-center by up to half an hour. The grid
-    // loop below handles a non-hour-aligned window_start/window_end directly
-    // (partial first/last rows) instead of assuming uniform 60-minute rows.
-    constexpr int kZoomSpanMinutes = 6 * 60;
-    int window_start = kWindowStartMin;
-    int window_end = window_start + kZoomSpanMinutes;
-    if (now_minutes >= 0) {
-        window_start = std::max(kWindowStartMin, std::min(kWindowEndMin - kZoomSpanMinutes,
-                                                            now_minutes - kZoomSpanMinutes / 2));
-        window_end = window_start + kZoomSpanMinutes;
-    }
+    // window by default — deliberately not hour-snapped, since snapping the
+    // start to an hour boundary shoved "now" off-center by up to half an
+    // hour. UP/DOWN (see ScrollDetailWindow) can override that auto-centering
+    // with an explicit window_start. The grid loop below handles a
+    // non-hour-aligned window_start/window_end directly (partial first/last
+    // rows) instead of assuming uniform 60-minute rows.
+    const int window_start = (detail_window_start_override_ >= 0)
+        ? detail_window_start_override_ : AutoWindowStart(now_minutes);
+    const int window_end = window_start + kZoomSpanMinutes;
 
-    const bool eff_cam = kDebugAvStates[debug_av_index_].cam;
-    const bool eff_presenting = kDebugAvStates[debug_av_index_].presenting;
-    const EffectiveStatus status = ComputeEffectiveStatus(debug_tier_, eff_cam, eff_presenting);
+    const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
+    bool calendar_busy = real_active != nullptr;
+    PresenceEventTier calendar_tier = real_active ? real_active->tier : PresenceEventTier::kInternal;
+    bool webcam_active = current_.webcam_active;
+    bool presenting = current_.presenting;
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    calendar_busy = DebugTierIsBusy(debug_tier_);
+    calendar_tier = DebugTierToPresenceTier(debug_tier_);
+    webcam_active = kDebugAvStates[debug_av_index_].cam;
+    presenting = kDebugAvStates[debug_av_index_].presenting;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    const EffectiveStatus status = ComputeEffectiveStatus(
+        calendar_busy, calendar_tier, current_.in_call, webcam_active, presenting);
     const bool busy_now = status.busy;
 
     // Single-line header: a tier swatch, the headline word, and the camera
@@ -432,9 +491,9 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
     DrawText(fb, width, word_x, InkCenteredTextTopYInBox(title_font_, word, kHeaderTop, kHeaderHeight, 0),
              word, title_font_, BLACK);
 
-    const int cam_w = CameraGlyphWidth(eff_cam, font_);
+    const int cam_w = CameraGlyphWidth(webcam_active, font_);
     DrawCameraGlyph(fb, width, height, width - Style::kSpacingLG - cam_w, kHeaderTop + kHeaderHeight / 2,
-                    eff_cam, font_, BLACK);
+                    webcam_active, font_, BLACK);
 
     // Heavy rule under the header, matching the design's app-bar/grid split.
     DrawHLine(fb, width, kGridTop - 1, 0, width - 1, border);
@@ -458,7 +517,7 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
         if (row_start_min > window_start) {
             DrawDashedHLine(fb, width, row_top, kLeftMargin, width - kRightMargin, border);
         }
-        char label[8];
+        char label[16];
         snprintf(label, sizeof(label), "%d", h);
         DrawText(fb, width, 4, InkCenteredTextTopYInBox(font_, label, row_top, std::min(16, row_bottom - row_top), 0),
                  label, font_, secondary);
@@ -612,14 +671,19 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     const Color border = theme.ColorFor(ThemeToken::Border);
 
     const int now_minutes = CurrentLocalMinutes();
-    // "until" and the rail always reflect the real calendar; only the
-    // word/band/human-line/camera/presenting below are driven by the
-    // debug override (UP/DOWN), so the debug cycle never has to fake a
-    // fictitious end time or corrupt the actual day shape.
     const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
-    const bool eff_cam = kDebugAvStates[debug_av_index_].cam;
-    const bool eff_presenting = kDebugAvStates[debug_av_index_].presenting;
-    const EffectiveStatus status = ComputeEffectiveStatus(debug_tier_, eff_cam, eff_presenting);
+    bool calendar_busy = real_active != nullptr;
+    PresenceEventTier calendar_tier = real_active ? real_active->tier : PresenceEventTier::kInternal;
+    bool webcam_active = current_.webcam_active;
+    bool presenting = current_.presenting;
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    calendar_busy = DebugTierIsBusy(debug_tier_);
+    calendar_tier = DebugTierToPresenceTier(debug_tier_);
+    webcam_active = kDebugAvStates[debug_av_index_].cam;
+    presenting = kDebugAvStates[debug_av_index_].presenting;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    const EffectiveStatus status = ComputeEffectiveStatus(
+        calendar_busy, calendar_tier, current_.in_call, webcam_active, presenting);
     const bool busy_now = status.busy;
 
     // Top status band: red whenever the room is elevated (leadership,
@@ -730,9 +794,9 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     // Camera badge lines up with "until", not the human line below: matching
     // font sizes (both small/secondary-weight) put it on a coherent visual
     // line, where next to the big bold human-line text it looked mismatched.
-    const int cam_w = CameraGlyphWidth(eff_cam, font_);
+    const int cam_w = CameraGlyphWidth(webcam_active, font_);
     DrawCameraGlyph(fb, width, height, content_right - Style::kSpacingSM - cam_w, until_center_y,
-                    eff_cam, font_, secondary);
+                    webcam_active, font_, secondary);
     y += kLineBoxH + Style::kSpacingSM;
 
     // Human line — the tier-carrying segment (e.g. "important") is colored
@@ -779,9 +843,9 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     DrawTextBold(fb, width, seg_x, human_y, seg_b.c_str(), title_font_, seg_b_color);
     y += kLineBoxH + Style::kSpacingMD;
 
-    // "Presenting" banner: demo-only signal (no real screen-share sensor
-    // wired up yet) shown whenever the effective presenting state is set.
-    if (eff_presenting) {
+    // "Presenting" banner, shown whenever the screen-share/do-not-disturb
+    // signal is set (real, from /live — or the debug override, if enabled).
+    if (presenting) {
         constexpr int kBannerH = 22;
         Rect banner{content_x0, y, content_right - content_x0, kBannerH};
         DrawRect(fb, width, banner, YELLOW);
@@ -790,6 +854,61 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
         const int banner_text_w = MeasureTextWidth(banner_text, font_);
         DrawText(fb, width, banner.x + std::max(4, (banner.w - banner_text_w) / 2),
                  InkCenteredTextTopYInBox(font_, banner_text, banner.y, banner.h, 0), banner_text, font_, BLACK);
+    }
+
+    // Tomorrow's first meeting — end-of-workday context so a glance on the
+    // way out answers "what does tomorrow morning look like" without
+    // opening the detail face. Fixed slot directly above the footer,
+    // reserved whether or not it's actually drawn, so nothing else in the
+    // layout shifts depending on the time of day. Both branches share one
+    // prefix/highlight/suffix shape (rather than one being a special case)
+    // because which part reads naturally around the highlighted segment
+    // differs by language: English puts nothing before "No meetings" and
+    // "tomorrow" after; Chinese puts "明天" (tomorrow) first in both cases.
+    constexpr int kTomorrowLineH = 18;
+    constexpr int kEndOfWorkdayMinutes = 17 * 60;
+    if (now_minutes >= kEndOfWorkdayMinutes && current_.tomorrow_valid) {
+        // kSpacingXS clearance from the footer divider: with no gap, a
+        // descender (e.g. the "g" in "meeting") lands right on the divider
+        // line and reads as touching/clipped.
+        const int tomorrow_line_top = footer_top - Style::kSpacingXS - kTomorrowLineH;
+        const int tomorrow_center_y = tomorrow_line_top + kTomorrowLineH / 2;
+        // One shared y for every segment on this line, plain and boxed
+        // alike (mirrors the human-line comment above): ink-centering each
+        // piece independently — including inside the chip — would put them
+        // a pixel or two off each other's baseline.
+        const int tomorrow_y = InkCenteredTextTopY(font_, "Ag", tomorrow_center_y, 0);
+
+        std::string prefix, highlight, suffix;
+        if (current_.tomorrow_first_event_minutes >= 0) {
+            prefix = i18n::Tr(i18n::StringId::kBusyLightTomorrowFirstMeetingPrefix);
+            char time_buf[16];
+            snprintf(time_buf, sizeof(time_buf), "%02d:%02d",
+                     static_cast<int>(current_.tomorrow_first_event_minutes / 60),
+                     static_cast<int>(current_.tomorrow_first_event_minutes % 60));
+            highlight = time_buf;
+            suffix = i18n::Tr(i18n::StringId::kBusyLightTomorrowFirstMeetingSuffix);
+        } else {
+            prefix = i18n::Tr(i18n::StringId::kBusyLightTomorrowNoMeetingsPrefix);
+            highlight = i18n::Tr(i18n::StringId::kBusyLightTomorrowNoMeetingsHighlight);
+            suffix = i18n::Tr(i18n::StringId::kBusyLightTomorrowNoMeetingsSuffix);
+        }
+
+        // Plain (not bold) prefix/suffix: only the highlighted segment
+        // (the time, or "No meetings") should draw the eye, matching the
+        // chip's already-bold text — bolding everything flattened that
+        // contrast back out.
+        int seg_x = content_x0;
+        if (!prefix.empty()) {
+            DrawText(fb, width, seg_x, tomorrow_y, prefix.c_str(), font_, secondary);
+            seg_x += MeasureTextWidth(prefix.c_str(), font_);
+        }
+        // Chip, not plain yellow text: yellow text directly on the page
+        // background has too little contrast to read on e-ink.
+        seg_x += DrawHighlightChip(fb, width, seg_x, tomorrow_center_y, tomorrow_y, highlight.c_str(), font_);
+        if (!suffix.empty()) {
+            DrawText(fb, width, seg_x, tomorrow_y, suffix.c_str(), font_, secondary);
+        }
     }
 
     // Footer: hints that BOOT opens the detail face. Divider only spans the
@@ -810,25 +929,74 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     DrawText(fb, width, chevron_c.x - 3, InkCenteredTextTopY(font_, ">", chevron_c.y, 0), ">", font_, BLACK);
 }
 
+void BusyLightRenderer::ScrollDetailWindow(int delta_minutes) {
+    const int current_start = (detail_window_start_override_ >= 0)
+        ? detail_window_start_override_ : AutoWindowStart(CurrentLocalMinutes());
+    const int new_start = ClampWindowStart(current_start + delta_minutes);
+    if (new_start == current_start) {
+        // Already at the day's start/end — the clamp absorbed the whole
+        // step, so this press was a no-op. Application::OnUpClick/
+        // OnDownClick already flashes the activity LED unconditionally
+        // before HandleInput runs, so signal "rejected" with a rapid
+        // double-blink on top of that rather than trying to suppress it.
+        Board::GetInstance().FlashErrorLed();
+        return;
+    }
+    detail_window_start_override_ = new_start;
+    needs_full_refresh_ = true;
+}
+
 bool BusyLightRenderer::HandleInput(const ButtonEvent& event) {
     switch (event.type) {
         case ButtonEvent::kBootClick:
             view_ = (view_ == View::kDefault) ? View::kDetail : View::kDefault;
+            // Always re-enter a view at its auto-centered-on-now window
+            // rather than remembering where a previous visit to the detail
+            // face was scrolled to — simplest mental model, and means a
+            // scroll never "gets lost" in a state you have to remember to
+            // undo.
+            detail_window_start_override_ = -1;
             needs_full_refresh_ = true;
             return true;
-        // Debug/demo cycles — neither button did anything on this page
-        // before. UP steps through the four status tiers, DOWN through the
-        // camera/presenting combinations; both only affect the header (word,
-        // swatch, band, human line, camera, presenting banner), never the
-        // real calendar underneath.
+        // On the detail face, UP/DOWN scroll the zoomed day-grid window
+        // (see RenderDetailFace) one hour at a time; a press that's already
+        // at the clamped start/end of the day (kWindowStartMin/kWindowEndMin)
+        // is a no-op signaled by a rapid double-blink instead of the usual
+        // single activity-pulse blink, so the clamp is felt, not just seen
+        // on the next 15-25s e-ink refresh.
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        // On the default face (only compiled in when CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        // is set — see Kconfig.projbuild), UP/DOWN instead cycle the debug/demo
+        // status override: UP steps through the four status tiers, DOWN
+        // through the camera/presenting combinations. Both only affect the
+        // header (word, swatch, band, human line, camera, presenting
+        // banner), never the real calendar underneath.
         case ButtonEvent::kUpClick:
+            if (view_ == View::kDetail) {
+                ScrollDetailWindow(-kDetailScrollStepMinutes);
+                return true;
+            }
             debug_tier_ = static_cast<DebugTier>((static_cast<int>(debug_tier_) + 1) % 4);
             needs_full_refresh_ = true;
             return true;
         case ButtonEvent::kDownClick:
+            if (view_ == View::kDetail) {
+                ScrollDetailWindow(kDetailScrollStepMinutes);
+                return true;
+            }
             debug_av_index_ = (debug_av_index_ + 1) % kDebugAvStateCount;
             needs_full_refresh_ = true;
             return true;
+#else   // !CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        case ButtonEvent::kUpClick:
+            if (view_ != View::kDetail) return false;
+            ScrollDetailWindow(-kDetailScrollStepMinutes);
+            return true;
+        case ButtonEvent::kDownClick:
+            if (view_ != View::kDetail) return false;
+            ScrollDetailWindow(kDetailScrollStepMinutes);
+            return true;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
         case ButtonEvent::kUpLongPress:
         case ButtonEvent::kDownLongPress:
         case ButtonEvent::kBootLongPress:

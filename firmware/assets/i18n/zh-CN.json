@@ -482,5 +482,10 @@
   "busy_light_customer": "客户",
   "busy_light_come_in": "可以进来",
   "busy_light_presenting_banner": "演示中 — 请勿打扰",
-  "busy_light_footer_hint": "按键查看今日计划"
+  "busy_light_footer_hint": "按键查看今日计划",
+  "busy_light_tomorrow_first_meeting_prefix": "明天 ",
+  "busy_light_tomorrow_first_meeting_suffix": " 第一个会议",
+  "busy_light_tomorrow_no_meetings_prefix": "明天",
+  "busy_light_tomorrow_no_meetings_highlight": "没有会议",
+  "busy_light_tomorrow_no_meetings_suffix": ""
 }
