@@ -4,7 +4,7 @@ This document records where the busy-light feature (office-door presence display
 
 ## Status
 
-Contract-first, not backend-first: the firmware, the mock server, and the JSON contract between them are built and working. `server/calendar_bridge.py` is a real bridge — `/calendar/today` against a calendar webhook, `/live` against Home Assistant sensors — but the firmware is still pointed at the mock server (see below) pending an on-device test pass.
+Contract-first, not backend-first — but the real backend is live now. `server/calendar_bridge.py` is a real bridge (`/calendar/today` against a calendar webhook, `/live` against Home Assistant sensors), verified end-to-end against the actual webhook/HA instance and confirmed on-device (default face correctly showing FREE/CAM OFF against an empty calendar and idle sensors). `kPresenceBridgeEndpoint` in `application.cc` doesn't distinguish mock from real — it's just whatever server happens to be running at that LAN IP/port, so switching between them is an operational choice (which server process is up), not a firmware change. `server/mock_presence_server.py` is kept around for offline dev/demo.
 
 The firmware polls two endpoints, split because the data behind them changes at very different rates (see `firmware/main/common/presence_api.h`):
 
@@ -96,7 +96,6 @@ Point the firmware at it via `presence_api_set_endpoint()`, or by editing `kPres
 
 ## Not yet built
 
-- `calendar_bridge.py` covers both halves against real sources now (calendar webhook + Home Assistant), but is unverified end-to-end against live HA data — needs a real `HA_URL`/`HA_TOKEN` and a run against the actual sensors before the firmware gets pointed at it.
-- The poll-vs-push decision for a real backend is still open; battery impact is the deciding factor, not settled yet.
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
 - The device-side HTTP response buffer is fixed at 8KB (`firmware/main/common/presence_api.cc`) — sized for a busy single day with long titles, not for a third `days` entry or an unusually large participant list.
+- UP/DOWN currently do nothing on the busy-light page (outside of `CONFIG_BUSY_LIGHT_DEBUG_CYCLE` builds) — the plan is to use them for scrolling the detail face's zoomed day-grid window, not yet implemented.
