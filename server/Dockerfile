@@ -24,6 +24,14 @@ COPY calendar_bridge.py presence_bridge.py env_file.py ./
 ENV PYTHONUNBUFFERED=1
 EXPOSE 8080
 
+# /live always returns HTTP 200 by design (see calendar_bridge.py's
+# docstring: internal errors fall back to "nothing going on" defaults
+# rather than erroring), so this only fails if the process itself is dead
+# or unresponsive - a plain liveness check, not an upstream-reachability
+# check. No curl/wget in this slim image, so use Python's stdlib instead.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD python3 -c "import urllib.request as u; import sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8080/live', timeout=3).status == 200 else 1)"
+
 # calendar_bridge.py is the default (webhook calendar + HA presence). Switch
 # to presence_bridge.py (all-HA) by overriding the container command, e.g.
 # in docker-compose.yml: `command: ["presence_bridge.py", "--port", "8080"]`.
