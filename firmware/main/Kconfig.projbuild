@@ -53,4 +53,126 @@ config BUSY_LIGHT_DEBUG_CYCLE
         real deployment: with it off, the header always reflects the real
         fetched presence status.
 
+# These bake per-deployment values into the firmware image at build time
+# (via sdkconfig, same mechanism as any other Kconfig option) instead of
+# scattering them as raw constants across the source tree. sdkconfig is
+# gitignored, so each checkout/dev machine can carry its own real values
+# while sdkconfig.defaults.esp32s3 keeps a safe generic default for fresh
+# checkouts. All of these were previously hand-editable constants in
+# application.cc/i18n.cc - they still have the same effect, just declared
+# in one place.
+menu "Deployment defaults"
+
+    config PRESENCE_BRIDGE_ENDPOINT
+        string "Presence/calendar bridge base URL"
+        default "http://192.168.178.37:8080"
+        help
+            Base URL (scheme + host, optionally :port, no trailing slash) of
+            the server/calendar_bridge.py or server/presence_bridge.py
+            instance this device polls for GET /live and GET
+            /calendar/today. A real DNS hostname (e.g. an https:// domain
+            behind a reverse proxy) works fine here - esp_http_client
+            resolves it via the normal DNS resolver, this only needs to be
+            a plain LAN IP if no public/LAN DNS entry exists for it.
+
+    choice DEFAULT_UI_LANGUAGE
+        prompt "Default UI language at first boot"
+        default DEFAULT_UI_LANGUAGE_EN_US
+        help
+            Language shown before any Settings > Language toggle has been
+            saved to NVS. Can still be changed on-device afterward - this
+            only controls the very first boot's default.
+
+        config DEFAULT_UI_LANGUAGE_EN_US
+            bool "English (en-US)"
+
+        config DEFAULT_UI_LANGUAGE_ZH_CN
+            bool "Chinese (zh-CN)"
+    endchoice
+
+    config DEFAULT_SYNC_INTERVAL_MIN
+        int "Default idle-nap sync interval (minutes, 0 disables)"
+        default 30
+        help
+            How often the device wakes from deep sleep to resync when idle
+            (ArmSyncSleepTimer/EnterScheduledSleep in application.cc). No
+            Settings UI toggle exists for this yet, so it's build-time only
+            for now. Set to 0 to disable this nap entirely (e.g. for a
+            busy-light deployment relying only on quiet-hours sleep below).
+
+    config DEFAULT_SLIDESHOW_INTERVAL_MIN
+        int "Default gallery slideshow interval (minutes, 0 disables)"
+        default 5
+        help
+            Must be one of 0, 5, 10, 30 - matches the cycle order of the
+            Settings > Slideshow Interval toggle. Only affects first boot;
+            changeable on-device afterward.
+
+    config DEFAULT_LAN_SERVER_ENABLED
+        bool "Default: LAN transfer HTTP server enabled"
+        default n
+        help
+            Only affects first boot; changeable on-device afterward via
+            Settings > LAN Server.
+
+    config DEFAULT_QUIET_HOURS_ENABLED
+        bool "Default: quiet-hours scheduled sleep enabled"
+        default y
+        help
+            Only affects first boot; changeable on-device afterward via
+            Settings > Quiet Hours.
+
+    config QUIET_HOURS_WAKE_HOUR
+        int "Quiet hours: daily wake hour (0-23, local time)"
+        default 6
+        range 0 23
+        help
+            Every day (including Sat/Sun), the device auto-wakes from
+            quiet-hours deep sleep at this local hour:minute
+            (see QUIET_HOURS_WAKE_MINUTE below). Applies uniformly on
+            weekdays and weekends.
+
+    config QUIET_HOURS_WAKE_MINUTE
+        int "Quiet hours: daily wake minute (0-59)"
+        default 0
+        range 0 59
+
+    config QUIET_HOURS_WEEKDAY_SLEEP_HOUR
+        int "Quiet hours: Mon-Thu nightly sleep hour (0-23, local time)"
+        default 19
+        range 0 23
+        help
+            Monday-Thursday, quiet hours (and the deep sleep that goes with
+            them) start at this local hour:minute and run until the daily
+            wake time above.
+
+    config QUIET_HOURS_WEEKDAY_SLEEP_MINUTE
+        int "Quiet hours: Mon-Thu nightly sleep minute (0-59)"
+        default 0
+        range 0 59
+
+    config QUIET_HOURS_FRIDAY_SLEEP_HOUR
+        int "Quiet hours: Friday weekend sleep hour (0-23, local time)"
+        default 18
+        range 0 23
+        help
+            Friday quiet hours start earlier than other weeknights, and run
+            through the whole weekend until Monday's daily wake time.
+
+    config QUIET_HOURS_FRIDAY_SLEEP_MINUTE
+        int "Quiet hours: Friday weekend sleep minute (0-59)"
+        default 0
+        range 0 59
+
+    config QUIET_HOURS_GRACE_MINUTES
+        int "Quiet hours: manual-wake grace period (minutes)"
+        default 5
+        range 1 60
+        help
+            After boot or any button press during quiet hours, the device
+            stays awake for at least this long before quiet-hours sleep can
+            trigger again (NoteQuietHoursActivity in application.cc) - so a
+            manual BOOT wake isn't immediately re-slept.
+endmenu
+
 endmenu

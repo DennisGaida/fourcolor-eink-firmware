@@ -25,8 +25,10 @@ namespace {
 constexpr char kTag[] = "Application";
 constexpr char kSyncNamespace[] = "sync";
 constexpr char kSyncIntervalKey[] = "sync_interval";
+constexpr int kSyncIntervalDefault = CONFIG_DEFAULT_SYNC_INTERVAL_MIN;
 constexpr char kGalleryNamespace[] = "gallery";
 constexpr char kSlideshowIntervalKey[] = "slide_min";
+constexpr int kSlideshowIntervalDefault = CONFIG_DEFAULT_SLIDESHOW_INTERVAL_MIN;
 constexpr char kNetworkNamespace[] = "network";
 constexpr char kLanServerEnabledKey[] = "lan_srv_on";
 // Off by default: the LAN gallery/photo webserver blocks scheduled deep
@@ -34,7 +36,11 @@ constexpr char kLanServerEnabledKey[] = "lan_srv_on";
 // auto-starting it on every WiFi connect silently prevented the device from
 // ever sleeping. Users who want it opt in via Settings, and that choice is
 // persisted so it only comes back if they asked for it.
+#ifdef CONFIG_DEFAULT_LAN_SERVER_ENABLED
+constexpr bool kLanServerEnabledDefault = true;
+#else
 constexpr bool kLanServerEnabledDefault = false;
+#endif
 constexpr int kSettingsSlideshowIndex = 4;
 constexpr int kSettingsWifiIndex = 6;
 constexpr int kSettingsHttpServerIndex = 7;
@@ -47,17 +53,26 @@ constexpr ui::RawDrawPageId kDefaultIdlePage = ui::RawDrawPageId::BusyLight;
 // can deep-sleep through those windows and wake automatically instead of
 // needing a BOOT press. Weeknight window: 19:00 -> next day 06:00. Weekend
 // window: Friday 18:00 -> Monday 06:00 (Saturday/Sunday are fully quiet).
+// All time boundaries are build-time Kconfig values (see "Deployment
+// defaults" > quiet hours in Kconfig.projbuild) rather than hardcoded here.
 constexpr char kQuietHoursNamespace[] = "quiet_hours";
 constexpr char kQuietHoursEnabledKey[] = "enabled";
+#ifdef CONFIG_DEFAULT_QUIET_HOURS_ENABLED
 constexpr bool kQuietHoursEnabledDefault = true;
-constexpr int kQuietHoursWakeMinute = 6 * 60;       // 06:00
-constexpr int kQuietHoursWeekdaySleepMinute = 19 * 60;  // 19:00, Mon-Thu
-constexpr int kQuietHoursFridaySleepMinute = 18 * 60;   // 18:00, Fri
+#else
+constexpr bool kQuietHoursEnabledDefault = false;
+#endif
+constexpr int kQuietHoursWakeMinute =
+    CONFIG_QUIET_HOURS_WAKE_HOUR * 60 + CONFIG_QUIET_HOURS_WAKE_MINUTE;
+constexpr int kQuietHoursWeekdaySleepMinute =
+    CONFIG_QUIET_HOURS_WEEKDAY_SLEEP_HOUR * 60 + CONFIG_QUIET_HOURS_WEEKDAY_SLEEP_MINUTE;
+constexpr int kQuietHoursFridaySleepMinute =
+    CONFIG_QUIET_HOURS_FRIDAY_SLEEP_HOUR * 60 + CONFIG_QUIET_HOURS_FRIDAY_SLEEP_MINUTE;
 // Grace window after boot/button activity before quiet-hours auto-sleep can
 // kick in again, so a manual BOOT-button wake during quiet hours (per
 // requirements) leaves the device usable for a few minutes rather than
 // snapping back to sleep on the very next Run() loop tick.
-constexpr int64_t kQuietHoursGraceMs = 5 * 60 * 1000;  // 5 minutes
+constexpr int64_t kQuietHoursGraceMs = CONFIG_QUIET_HOURS_GRACE_MINUTES * 60 * 1000;
 
 // tm_wday: 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat.
 bool IsQuietHoursNow(const struct tm& local_tm) {
@@ -107,12 +122,15 @@ time_t ComputeNextQuietHoursWakeEpoch(time_t now) {
 }
 
 // Base URL of the presence server (see server/mock_presence_server.py for
-// the contract: GET <endpoint>/calendar/today + GET <endpoint>/live). No
-// mDNS component is wired into this firmware, so this must be a plain LAN
-// IP, not a .local hostname. Points at the dev machine's current LAN IP —
-// update this (or use presence_api_set_endpoint()) to match wherever
-// mock_presence_server.py, or later a real bridge, actually runs.
-constexpr char kPresenceBridgeEndpoint[] = "http://192.168.178.37:8080";
+// the contract: GET <endpoint>/calendar/today + GET <endpoint>/live). Can be
+// a plain LAN IP or a real DNS hostname (e.g. behind a reverse proxy) -
+// esp_http_client resolves it via the normal DNS resolver either way; only
+// .local/mDNS names won't work since no mDNS component is wired in. Set via
+// Kconfig ("Deployment defaults" > Presence/calendar bridge base URL,
+// CONFIG_PRESENCE_BRIDGE_ENDPOINT) rather than hardcoded here - update it
+// (or use presence_api_set_endpoint() at runtime) to match wherever the
+// bridge actually runs.
+constexpr char kPresenceBridgeEndpoint[] = CONFIG_PRESENCE_BRIDGE_ENDPOINT;
 
 std::string FormatMinutesLabel(int minutes) {
     if (minutes <= 0) return i18n::Tr(i18n::StringId::kOff);
@@ -259,10 +277,10 @@ void Application::Initialize() {
 
     if (auto* sr = rawdraw_ui_manager_->GetSettingsRenderer()) {
         Settings gallery_nvs(kGalleryNamespace, false);
-        int slideshow_interval = gallery_nvs.GetInt(kSlideshowIntervalKey, 5);
+        int slideshow_interval = gallery_nvs.GetInt(kSlideshowIntervalKey, kSlideshowIntervalDefault);
         if (slideshow_interval != 0 && slideshow_interval != 5 &&
             slideshow_interval != 10 && slideshow_interval != 30) {
-            slideshow_interval = 5;
+            slideshow_interval = kSlideshowIntervalDefault;
         }
         ESP_LOGI(kTag, "Startup gallery fullscreen slideshow: %s, interval=%s",
                  FormatMinutesLogLabel(slideshow_interval),
@@ -292,7 +310,7 @@ void Application::Initialize() {
                          rawdraw::SettingsItemType::Action, false,
                          [this, sr]() {
                              Settings nvs(kGalleryNamespace, true);
-                             const int current = nvs.GetInt(kSlideshowIntervalKey, 5);
+                             const int current = nvs.GetInt(kSlideshowIntervalKey, kSlideshowIntervalDefault);
                              const int next = NextSlideshowInterval(current);
                              nvs.SetInt(kSlideshowIntervalKey, next);
                              if (rawdraw_ui_manager_) {
@@ -625,7 +643,7 @@ void Application::ArmSyncSleepTimer() {
     }
 
     Settings nvs(kSyncNamespace, false);
-    const int interval_minutes = nvs.GetInt(kSyncIntervalKey, 30);
+    const int interval_minutes = nvs.GetInt(kSyncIntervalKey, kSyncIntervalDefault);
     if (interval_minutes <= 0) {
         ESP_LOGI(kTag, "Sync sleep interval: off");
         return;

@@ -200,7 +200,16 @@ void SaveBleState(const BleState& state) {
 
 int LoadUiLanguage() {
     Settings nvs(kNamespace);
-    return static_cast<int>(nvs.GetInt(kUiLanguage, 0));
+    // 0 = zh-CN, 1 = en-US (see i18n.cc). Default is a Kconfig choice
+    // ("Deployment defaults" > Default UI language) rather than hardcoded,
+    // so a fresh device boots into the right language before any Settings
+    // toggle has been saved to NVS.
+#if CONFIG_DEFAULT_UI_LANGUAGE_EN_US
+    constexpr int kDefaultUiLanguage = 1;
+#else
+    constexpr int kDefaultUiLanguage = 0;
+#endif
+    return static_cast<int>(nvs.GetInt(kUiLanguage, kDefaultUiLanguage));
 }
 
 void SaveUiLanguage(int language) {
