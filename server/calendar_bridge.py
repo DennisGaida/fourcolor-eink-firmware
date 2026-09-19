@@ -75,10 +75,14 @@ HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.pw0q6czd_we
 HA_TEAMS_STATUS_SENSOR = os.environ.get("HA_TEAMS_STATUS_SENSOR", "sensor.teams_status")
 # Comma-separated, case-insensitive: HA_TEAMS_STATUS_SENSOR's state is
 # compared against this list to derive isPresenting — there's no dedicated
-# "presenting" binary sensor, just this text state.
+# "presenting" binary sensor, just this text state. Observed values from
+# this integration: Offline, Away, Busy, Unknown, Available, and "Do Not
+# Disturb" — the last of which is what it reports while actually
+# presenting, not a literal "Presenting" string (Teams itself conflates
+# the two statuses; HA just passes that through).
 HA_PRESENTING_STATES = {
     s.strip().lower()
-    for s in os.environ.get("HA_PRESENTING_STATES", "Presenting").split(",")
+    for s in os.environ.get("HA_PRESENTING_STATES", "Do Not Disturb").split(",")
     if s.strip()
 }
 HA_FETCH_TIMEOUT_SECONDS = 5
