@@ -5,9 +5,11 @@
 #   docker compose up -d
 #
 # The image is also published to GHCR on every change under server/ (see
-# ../.github/workflows/build-bridge.yml) - swap `build:` for `image:
-# ghcr.io/<owner>/busylight-bridge:<version>` below to use that instead of
-# building locally.
+# ../.github/workflows/build-bridge.yml). Its version is derived
+# automatically from Conventional Commits touching server/ (no file to bump
+# by hand) and tagged in git as bridge-vX.Y.Z - swap `build:` for `image:
+# ghcr.io/<owner>/busylight-bridge:<version>` (or `:latest`) below to use
+# that instead of building locally.
 services:
   bridge:
     build: .
