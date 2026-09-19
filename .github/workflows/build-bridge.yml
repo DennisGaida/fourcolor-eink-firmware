@@ -1,0 +1,69 @@
+name: Build & Publish Bridge Image
+
+# Only runs when something under server/ (or this workflow itself) changes -
+# this is a standalone container unrelated to the firmware build, so it
+# shouldn't run on every firmware-only commit.
+on:
+  push:
+    branches: [dev, 2bp]
+    paths:
+      - 'server/**'
+      - '.github/workflows/build-bridge.yml'
+  pull_request:
+    branches: [dev, 2bp]
+    paths:
+      - 'server/**'
+      - '.github/workflows/build-bridge.yml'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: busylight-bridge
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # server/VERSION is the single source of truth for the image's semver
+      # tag - bump it in the same PR/commit that changes server/ behavior to
+      # cut a new published version; leave it as-is for a no-behavior-change
+      # touch-up and the same version tag is just republished with the
+      # latest content.
+      - name: Read bridge version
+        id: version
+        run: echo "value=$(tr -d '[:space:]' < server/VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/metadata-action lowercases the image path automatically,
+      # which GHCR requires (repository owner/name may be mixed case).
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'dev') }}
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

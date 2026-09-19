@@ -32,6 +32,40 @@ Album images can enter the server either from a PC/NAS management console or fro
 
 Note: `firmware/scripts/` and `frontend/scripts/` are still in use, belonging to the firmware tooling and frontend tooling respectively; what was removed is the legacy root-level `scripts/`.
 
+## Presence/Calendar Bridge (Busy Light)
+
+The busy-light page polls a small HTTP bridge for `GET /live` (presence)
+and `GET /calendar/today` (calendar) - see `server/calendar_bridge.py` or
+`server/presence_bridge.py` for the two implementations (webhook+HA vs.
+all-HA) and `server/.env.example` for the full list of configuration
+variables. Point the firmware at it via the `PRESENCE_BRIDGE_ENDPOINT`
+Kconfig option (`idf.py menuconfig` > Xiaozhi Assistant > Deployment
+defaults).
+
+Run it directly:
+
+```bash
+cd server
+cp .env.example .env   # fill in real values
+python3 calendar_bridge.py --port 8080
+```
+
+Or as a container (no third-party Python dependencies, so the image is
+just a slim Python base + the two bridge scripts):
+
+```bash
+cd server
+cp .env.example .env   # fill in real values
+docker compose up -d --build
+```
+
+A prebuilt image is also published to `ghcr.io/<owner>/busylight-bridge`
+on every change under `server/` (see
+`.github/workflows/build-bridge.yml`); swap `docker-compose.yml`'s
+`build:` line for `image: ghcr.io/<owner>/busylight-bridge:<version>` to
+use that instead of building locally. The published version comes from
+`server/VERSION` - bump that file to cut a new published version.
+
 ## Backend Service
 
 The backend entry point is `server/llmserve.py`, best managed via `server/start.sh`. Default service ports:
