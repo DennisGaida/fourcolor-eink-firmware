@@ -18,24 +18,79 @@ on:
 
 env:
   IMAGE_NAME: busylight-bridge
+  TAG_PREFIX: bridge-v
 
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # only used to push the bridge-vX.Y.Z tag
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history + tags to diff conventional commits
 
-      # server/VERSION is the single source of truth for the image's semver
-      # tag - bump it in the same PR/commit that changes server/ behavior to
-      # cut a new published version; leave it as-is for a no-behavior-change
-      # touch-up and the same version tag is just republished with the
-      # latest content.
-      - name: Read bridge version
+      # No server/VERSION file to hand-maintain: the next semver is derived
+      # from Conventional Commits (https://www.conventionalcommits.org/)
+      # touching server/ since the last bridge-vX.Y.Z tag -
+      #   feat: ...              -> minor bump
+      #   fix: / perf: ...       -> patch bump
+      #   `type!:` or a
+      #   "BREAKING CHANGE:" footer -> major bump
+      # Commits of any other type (docs/chore/refactor/test/ci/build/style)
+      # don't move the version - matching plain semver semantics. If no
+      # bridge-vX.Y.Z tag exists yet, this bootstraps at 0.1.0.
+      - name: Compute next version from Conventional Commits
         id: version
-        run: echo "value=$(tr -d '[:space:]' < server/VERSION)" >> "$GITHUB_OUTPUT"
+        run: |
+          set -euo pipefail
+          PREFIX="${TAG_PREFIX}"
+          LAST_TAG=$(git tag --list "${PREFIX}*" --sort=-v:refname | head -n1 || true)
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous ${PREFIX}* tag found - bootstrapping at 0.1.0"
+            NEW_VERSION="0.1.0"
+            BUMP="initial"
+          else
+            LAST_VERSION="${LAST_TAG#${PREFIX}}"
+            echo "Last published version: $LAST_VERSION (tag $LAST_TAG)"
+
+            # 0=none 1=patch 2=minor 3=major
+            BUMP_LEVEL=0
+            COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%H' -- server/)
+            for sha in $COMMITS; do
+              MSG=$(git log -1 --format='%B' "$sha")
+              if echo "$MSG" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' || echo "$MSG" | grep -q 'BREAKING CHANGE:'; then
+                BUMP_LEVEL=3
+              elif echo "$MSG" | grep -qE '^feat(\([^)]*\))?:' && [ "$BUMP_LEVEL" -lt 2 ]; then
+                BUMP_LEVEL=2
+              elif echo "$MSG" | grep -qE '^(fix|perf)(\([^)]*\))?:' && [ "$BUMP_LEVEL" -lt 1 ]; then
+                BUMP_LEVEL=1
+              fi
+            done
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+            case "$BUMP_LEVEL" in
+              3) NEW_VERSION="$((MAJOR + 1)).0.0"; BUMP="major" ;;
+              2) NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"; BUMP="minor" ;;
+              1) NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"; BUMP="patch" ;;
+              *) NEW_VERSION="$LAST_VERSION"; BUMP="none" ;;
+            esac
+          fi
+
+          echo "Bump: $BUMP -> version $NEW_VERSION"
+          echo "value=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "tag=${PREFIX}${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag new version
+        if: github.event_name == 'push' && steps.version.outputs.bump != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "bridge ${{ steps.version.outputs.value }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

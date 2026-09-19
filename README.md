@@ -63,8 +63,11 @@ A prebuilt image is also published to `ghcr.io/<owner>/busylight-bridge`
 on every change under `server/` (see
 `.github/workflows/build-bridge.yml`); swap `docker-compose.yml`'s
 `build:` line for `image: ghcr.io/<owner>/busylight-bridge:<version>` to
-use that instead of building locally. The published version comes from
-`server/VERSION` - bump that file to cut a new published version.
+use that instead of building locally. There's no version file to bump by
+hand: the published version is computed automatically from [Conventional
+Commits](#commit-messages) touching `server/` since the last `bridge-v*`
+git tag (`feat:` -> minor, `fix:`/`perf:` -> patch, a `!:` marker or
+`BREAKING CHANGE:` footer -> major).
 
 ## Backend Service
 
