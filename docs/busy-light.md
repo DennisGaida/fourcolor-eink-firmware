@@ -98,4 +98,4 @@ Point the firmware at it via `presence_api_set_endpoint()`, or by editing `kPres
 
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
 - The device-side HTTP response buffer is fixed at 8KB (`firmware/main/common/presence_api.cc`) — sized for a busy single day with long titles, not for a third `days` entry or an unusually large participant list.
-- UP/DOWN currently do nothing on the busy-light page (outside of `CONFIG_BUSY_LIGHT_DEBUG_CYCLE` builds) — the plan is to use them for scrolling the detail face's zoomed day-grid window, not yet implemented.
+- UP/DOWN on the detail face scroll the zoomed day-grid window an hour at a time, clamped to the day's 8:00-18:00 bounds; a press that's already at the clamp signals a no-op with a rapid double-blink on the onboard LED (`Board::FlashErrorLed()`) instead of the usual single activity-pulse blink. Resets to auto-centered-on-now whenever the view is toggled. On the default face (or everywhere, when `CONFIG_BUSY_LIGHT_DEBUG_CYCLE` is off), UP/DOWN remain a no-op.
