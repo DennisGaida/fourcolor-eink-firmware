@@ -1,0 +1,25 @@
+# Example deployment of the presence/calendar bridge as a container.
+#
+# Usage:
+#   cp .env.example .env && fill in real values
+#   docker compose up -d
+#
+# The image is also published to GHCR on every change under server/ (see
+# ../.github/workflows/build-bridge.yml). Its version is derived
+# automatically from Conventional Commits touching server/ (no file to bump
+# by hand) and tagged in git as bridge-vX.Y.Z - swap `build:` for `image:
+# ghcr.io/<owner>/busylight-bridge:<version>` (or `:latest`) below to use
+# that instead of building locally.
+services:
+  bridge:
+    build: .
+    # image: ghcr.io/dennisgaida/busylight-bridge:latest
+    container_name: busylight-bridge
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    # Uncomment to run the all-Home-Assistant alternative instead of the
+    # default calendar_bridge.py (see Dockerfile / presence_bridge.py):
+    # command: ["presence_bridge.py", "--port", "8080"]

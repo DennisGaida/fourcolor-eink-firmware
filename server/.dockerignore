@@ -1,0 +1,9 @@
+# Keep the build context (and thus the image) minimal, and never bake
+# secrets in - .env is supplied at *runtime* via `docker run --env-file` or
+# docker-compose's `env_file:`, never copied into the image.
+.env
+.env.example
+__pycache__
+*.pyc
+.git
+.gitignore

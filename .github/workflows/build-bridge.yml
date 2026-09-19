@@ -1,0 +1,124 @@
+name: Build & Publish Bridge Image
+
+# Only runs when something under server/ (or this workflow itself) changes -
+# this is a standalone container unrelated to the firmware build, so it
+# shouldn't run on every firmware-only commit.
+on:
+  push:
+    branches: [dev, 2bp]
+    paths:
+      - 'server/**'
+      - '.github/workflows/build-bridge.yml'
+  pull_request:
+    branches: [dev, 2bp]
+    paths:
+      - 'server/**'
+      - '.github/workflows/build-bridge.yml'
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: busylight-bridge
+  TAG_PREFIX: bridge-v
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # only used to push the bridge-vX.Y.Z tag
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history + tags to diff conventional commits
+
+      # No server/VERSION file to hand-maintain: the next semver is derived
+      # from Conventional Commits (https://www.conventionalcommits.org/)
+      # touching server/ since the last bridge-vX.Y.Z tag -
+      #   feat: ...              -> minor bump
+      #   fix: / perf: ...       -> patch bump
+      #   `type!:` or a
+      #   "BREAKING CHANGE:" footer -> major bump
+      # Commits of any other type (docs/chore/refactor/test/ci/build/style)
+      # don't move the version - matching plain semver semantics. If no
+      # bridge-vX.Y.Z tag exists yet, this bootstraps at 0.1.0.
+      - name: Compute next version from Conventional Commits
+        id: version
+        run: |
+          set -euo pipefail
+          PREFIX="${TAG_PREFIX}"
+          LAST_TAG=$(git tag --list "${PREFIX}*" --sort=-v:refname | head -n1 || true)
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous ${PREFIX}* tag found - bootstrapping at 0.1.0"
+            NEW_VERSION="0.1.0"
+            BUMP="initial"
+          else
+            LAST_VERSION="${LAST_TAG#${PREFIX}}"
+            echo "Last published version: $LAST_VERSION (tag $LAST_TAG)"
+
+            # 0=none 1=patch 2=minor 3=major
+            BUMP_LEVEL=0
+            COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%H' -- server/)
+            for sha in $COMMITS; do
+              MSG=$(git log -1 --format='%B' "$sha")
+              if echo "$MSG" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' || echo "$MSG" | grep -q 'BREAKING CHANGE:'; then
+                BUMP_LEVEL=3
+              elif echo "$MSG" | grep -qE '^feat(\([^)]*\))?:' && [ "$BUMP_LEVEL" -lt 2 ]; then
+                BUMP_LEVEL=2
+              elif echo "$MSG" | grep -qE '^(fix|perf)(\([^)]*\))?:' && [ "$BUMP_LEVEL" -lt 1 ]; then
+                BUMP_LEVEL=1
+              fi
+            done
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+            case "$BUMP_LEVEL" in
+              3) NEW_VERSION="$((MAJOR + 1)).0.0"; BUMP="major" ;;
+              2) NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"; BUMP="minor" ;;
+              1) NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"; BUMP="patch" ;;
+              *) NEW_VERSION="$LAST_VERSION"; BUMP="none" ;;
+            esac
+          fi
+
+          echo "Bump: $BUMP -> version $NEW_VERSION"
+          echo "value=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "tag=${PREFIX}${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag new version
+        if: github.event_name == 'push' && steps.version.outputs.bump != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "bridge ${{ steps.version.outputs.value }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/metadata-action lowercases the image path automatically,
+      # which GHCR requires (repository owner/name may be mixed case).
+      - name: Compute image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'dev') }}
+            type=sha,prefix=sha-
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
