@@ -58,6 +58,7 @@ private:
     std::unique_ptr<ui::RawDrawUiManager> rawdraw_ui_manager_;
     esp_timer_handle_t sleep_timer_ = nullptr;
     esp_timer_handle_t wifi_ps_settle_timer_ = nullptr;
+    int64_t quiet_hours_active_until_ms_ = 0;
 
     void ArmSyncSleepTimer();
     void EnterScheduledSleep();
@@ -66,6 +67,9 @@ private:
     void EnterWifiConfigMode();
     void ArmWifiPowerSaveSettleTimer();
     void ApplySteadyStateWifiPowerSave();
+    void NoteQuietHoursActivity();
+    void MaybeEnterQuietHoursSleep();
+    void EnterQuietHoursSleep();
 };
 
 #endif  // _APPLICATION_H_

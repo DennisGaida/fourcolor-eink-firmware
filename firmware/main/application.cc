@@ -39,7 +39,72 @@ constexpr int kSettingsSlideshowIndex = 4;
 constexpr int kSettingsWifiIndex = 6;
 constexpr int kSettingsHttpServerIndex = 7;
 constexpr int kSettingsLanIpIndex = 8;
+constexpr int kSettingsQuietHoursIndex = 9;
 constexpr ui::RawDrawPageId kDefaultIdlePage = ui::RawDrawPageId::BusyLight;
+
+// "Quiet hours" scheduled deep sleep: nothing on the busy-light page (or any
+// other page) needs to update overnight or over the weekend, so the device
+// can deep-sleep through those windows and wake automatically instead of
+// needing a BOOT press. Weeknight window: 19:00 -> next day 06:00. Weekend
+// window: Friday 18:00 -> Monday 06:00 (Saturday/Sunday are fully quiet).
+constexpr char kQuietHoursNamespace[] = "quiet_hours";
+constexpr char kQuietHoursEnabledKey[] = "enabled";
+constexpr bool kQuietHoursEnabledDefault = true;
+constexpr int kQuietHoursWakeMinute = 6 * 60;       // 06:00
+constexpr int kQuietHoursWeekdaySleepMinute = 19 * 60;  // 19:00, Mon-Thu
+constexpr int kQuietHoursFridaySleepMinute = 18 * 60;   // 18:00, Fri
+// Grace window after boot/button activity before quiet-hours auto-sleep can
+// kick in again, so a manual BOOT-button wake during quiet hours (per
+// requirements) leaves the device usable for a few minutes rather than
+// snapping back to sleep on the very next Run() loop tick.
+constexpr int64_t kQuietHoursGraceMs = 5 * 60 * 1000;  // 5 minutes
+
+// tm_wday: 0=Sun, 1=Mon, ..., 5=Fri, 6=Sat.
+bool IsQuietHoursNow(const struct tm& local_tm) {
+    const int wday = local_tm.tm_wday;
+    const int minutes = local_tm.tm_hour * 60 + local_tm.tm_min;
+
+    // Saturday and Sunday are entirely inside the Friday-evening-to-Monday-
+    // morning weekend window.
+    if (wday == 6 || wday == 0) return true;
+
+    // Every other day: still quiet until the morning wake time - this is the
+    // tail end of the previous night's window (for Monday, the tail of the
+    // weekend window).
+    if (minutes < kQuietHoursWakeMinute) return true;
+
+    if (wday == 5) return minutes >= kQuietHoursFridaySleepMinute;  // Friday
+    return minutes >= kQuietHoursWeekdaySleepMinute;                // Mon-Thu
+}
+
+// Computes the next local-time epoch at which quiet hours end (06:00 on the
+// next day that isn't itself fully inside the weekend window).
+time_t ComputeNextQuietHoursWakeEpoch(time_t now) {
+    struct tm tm_now = {};
+    localtime_r(&now, &tm_now);
+
+    struct tm wake_tm = tm_now;
+    wake_tm.tm_hour = 6;
+    wake_tm.tm_min = 0;
+    wake_tm.tm_sec = 0;
+    wake_tm.tm_mday += 1;
+    time_t candidate = mktime(&wake_tm);
+
+    for (int guard = 0; guard < 8; ++guard) {
+        struct tm tm_candidate = {};
+        localtime_r(&candidate, &tm_candidate);
+        if (tm_candidate.tm_wday != 6 && tm_candidate.tm_wday != 0) {
+            break;
+        }
+        struct tm next_tm = tm_candidate;
+        next_tm.tm_mday += 1;
+        next_tm.tm_hour = 6;
+        next_tm.tm_min = 0;
+        next_tm.tm_sec = 0;
+        candidate = mktime(&next_tm);
+    }
+    return candidate;
+}
 
 // Base URL of the presence server (see server/mock_presence_server.py for
 // the contract: GET <endpoint>/calendar/today + GET <endpoint>/live). No
@@ -309,6 +374,22 @@ void Application::Initialize() {
                              UpdateStatusBarForUi();
                          }});
         items.push_back({i18n::Tr(i18n::StringId::kLanIp), i18n::Tr(i18n::StringId::kNotObtained), nullptr, rawdraw::SettingsItemType::Normal, false});
+        {
+            const bool quiet_hours_enabled = Settings(kQuietHoursNamespace, false)
+                .GetBool(kQuietHoursEnabledKey, kQuietHoursEnabledDefault);
+            items.push_back({"Quiet Hours",
+                             quiet_hours_enabled ? i18n::Tr(i18n::StringId::kOn2) : i18n::Tr(i18n::StringId::kOff2),
+                             nullptr, rawdraw::SettingsItemType::Checkbox, quiet_hours_enabled,
+                             [this, sr]() {
+                                 Settings nvs(kQuietHoursNamespace, true);
+                                 const bool enabled = !nvs.GetBool(kQuietHoursEnabledKey, kQuietHoursEnabledDefault);
+                                 nvs.SetBool(kQuietHoursEnabledKey, enabled);
+                                 ESP_LOGI(kTag, "Quiet hours toggled %s", enabled ? "ON" : "OFF");
+                                 sr->UpdateChecked(kSettingsQuietHoursIndex, enabled);
+                                 sr->UpdateItem(kSettingsQuietHoursIndex,
+                                                enabled ? i18n::Tr(i18n::StringId::kOn2) : i18n::Tr(i18n::StringId::kOff2));
+                             }});
+        }
         items.push_back({i18n::Tr(i18n::StringId::kPowerSaving), i18n::Tr(i18n::StringId::kEnterManually), nullptr,
                          rawdraw::SettingsItemType::Action, false,
                          [this]() {
@@ -330,6 +411,7 @@ void Application::Initialize() {
     }
 
     ESP_LOGI(kTag, "Rawdraw gallery UI initialized");
+    NoteQuietHoursActivity();
     if (esp_reset_reason() == ESP_RST_DEEPSLEEP) {
         ESP_LOGI(kTag, "Wake from deep sleep: flash activity LED and refresh UI");
         board.FlashActivityLed();
@@ -426,6 +508,7 @@ void Application::Initialize() {
 
 void Application::OnUpClick() {
     ESP_LOGI(kTag, "UP click");
+    NoteQuietHoursActivity();
     Board::GetInstance().FlashActivityLed();
     if (rawdraw_ui_manager_) {
         rawdraw_ui_manager_->HandleInput(rawdraw::ButtonEvent{rawdraw::ButtonEvent::kUpClick});
@@ -434,6 +517,7 @@ void Application::OnUpClick() {
 
 void Application::OnDownClick() {
     ESP_LOGI(kTag, "DOWN click");
+    NoteQuietHoursActivity();
     Board::GetInstance().FlashActivityLed();
     if (rawdraw_ui_manager_) {
         rawdraw_ui_manager_->HandleInput(rawdraw::ButtonEvent{rawdraw::ButtonEvent::kDownClick});
@@ -442,6 +526,7 @@ void Application::OnDownClick() {
 
 void Application::OnUpDoubleClick() {
     ESP_LOGI(kTag, "UP double click");
+    NoteQuietHoursActivity();
     Board::GetInstance().FlashActivityLed();
     if (rawdraw_ui_manager_) {
         rawdraw_ui_manager_->HandleInput(rawdraw::ButtonEvent{rawdraw::ButtonEvent::kUpDoubleClick});
@@ -475,6 +560,7 @@ void Application::OnWifiConfigComboLongPress() {
 
 void Application::OnBootClick() {
     ESP_LOGI(kTag, "BOOT click");
+    NoteQuietHoursActivity();
     Board::GetInstance().FlashActivityLed();
     if (rawdraw_ui_manager_) {
         rawdraw_ui_manager_->HandleInput(rawdraw::ButtonEvent{rawdraw::ButtonEvent::kBootClick});
@@ -498,6 +584,7 @@ void Application::OnBootLongPress() {
 }
 
 void Application::NoteButtonActivity() {
+    NoteQuietHoursActivity();
     Board::GetInstance().FlashActivityLed();
     if (rawdraw_ui_manager_) {
         rawdraw_ui_manager_->RequestActivePageRefresh();
@@ -645,8 +732,77 @@ void Application::Run() {
         if (rawdraw_ui_manager_) {
             rawdraw_ui_manager_->PumpClockRefresh();
         }
+        MaybeEnterQuietHoursSleep();
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+
+void Application::NoteQuietHoursActivity() {
+    quiet_hours_active_until_ms_ = esp_timer_get_time() / 1000 + kQuietHoursGraceMs;
+}
+
+// Independent of the generic sync-interval nap timer (ArmSyncSleepTimer /
+// EnterScheduledSleep) above, which some users disable entirely (sync
+// interval = 0) to keep pages like busy-light continuously live. Quiet
+// hours needs to work regardless of that setting, so it gets its own
+// per-second check and its own deep-sleep entry point.
+void Application::MaybeEnterQuietHoursSleep() {
+    if (!Settings(kQuietHoursNamespace, false).GetBool(kQuietHoursEnabledKey, kQuietHoursEnabledDefault)) {
+        return;
+    }
+
+    time_t now = 0;
+    time(&now);
+    struct tm local_tm = {};
+    localtime_r(&now, &local_tm);
+    if (local_tm.tm_year + 1900 < 2024) {
+        // System clock not yet SNTP-synced (or RTC not seeded); don't guess.
+        return;
+    }
+    if (!IsQuietHoursNow(local_tm)) {
+        return;
+    }
+    if (esp_timer_get_time() / 1000 < quiet_hours_active_until_ms_) {
+        // Recent boot or button press: leave the device usable for a short
+        // grace window before considering it idle again.
+        return;
+    }
+    if (IsLocalHttpServiceRunning(rawdraw_ui_manager_.get())) {
+        return;
+    }
+    if (rawdraw_ui_manager_ && rawdraw_ui_manager_->GetGallerySlideshowIntervalMinutes() > 0) {
+        return;
+    }
+
+    ESP_LOGI(kTag, "Quiet hours: entering deep sleep");
+    EnterQuietHoursSleep();
+}
+
+void Application::EnterQuietHoursSleep() {
+    if (sleep_timer_ != nullptr) {
+        esp_timer_stop(sleep_timer_);
+    }
+    if (wifi_ps_settle_timer_ != nullptr) {
+        esp_timer_stop(wifi_ps_settle_timer_);
+    }
+
+    time_t now = 0;
+    time(&now);
+    const time_t wake_epoch = ComputeNextQuietHoursWakeEpoch(now);
+    const double seconds_until_wake = difftime(wake_epoch, now);
+
+    wifi_connected_.store(false, std::memory_order_release);
+    esp_wifi_disconnect();
+    esp_wifi_stop();
+
+    if (seconds_until_wake > 0) {
+        esp_sleep_enable_timer_wakeup(static_cast<uint64_t>(seconds_until_wake) * 1000000ULL);
+    }
+    // BOOT still wakes the device early, same as the other sleep paths.
+    esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(BOOT_BUTTON_GPIO), 0);
+    ESP_LOGI(kTag, "Quiet hours: sleeping for ~%.0f minutes (BOOT wakes early)",
+             seconds_until_wake / 60.0);
+    esp_deep_sleep_start();
 }
 
 bool Application::SetDeviceState(DeviceState state) {
