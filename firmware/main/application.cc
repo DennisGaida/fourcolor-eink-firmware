@@ -27,6 +27,14 @@ constexpr char kSyncNamespace[] = "sync";
 constexpr char kSyncIntervalKey[] = "sync_interval";
 constexpr char kGalleryNamespace[] = "gallery";
 constexpr char kSlideshowIntervalKey[] = "slide_min";
+constexpr char kNetworkNamespace[] = "network";
+constexpr char kLanServerEnabledKey[] = "lan_srv_on";
+// Off by default: the LAN gallery/photo webserver blocks scheduled deep
+// sleep for as long as it runs (see IsLocalHttpServiceRunning() below), so
+// auto-starting it on every WiFi connect silently prevented the device from
+// ever sleeping. Users who want it opt in via Settings, and that choice is
+// persisted so it only comes back if they asked for it.
+constexpr bool kLanServerEnabledDefault = false;
 constexpr int kSettingsSlideshowIndex = 4;
 constexpr int kSettingsWifiIndex = 6;
 constexpr int kSettingsHttpServerIndex = 7;
@@ -140,6 +148,11 @@ Application::~Application() {
         esp_timer_stop(sleep_timer_);
         esp_timer_delete(sleep_timer_);
         sleep_timer_ = nullptr;
+    }
+    if (wifi_ps_settle_timer_ != nullptr) {
+        esp_timer_stop(wifi_ps_settle_timer_);
+        esp_timer_delete(wifi_ps_settle_timer_);
+        wifi_ps_settle_timer_ = nullptr;
     }
 }
 
@@ -256,6 +269,7 @@ void Application::Initialize() {
                              if (!rawdraw_ui_manager_) return;
                              if (rawdraw_ui_manager_->IsLanHttpServerRunning()) {
                                  ESP_LOGI(kTag, "LAN HTTP server toggled OFF");
+                                 Settings(kNetworkNamespace, true).SetBool(kLanServerEnabledKey, false);
                                  rawdraw_ui_manager_->StopLanHttpServer();
                                  UpdateHttpServerSettingsItem(sr, false);
                                  UpdateStatusBarForUi();
@@ -283,6 +297,9 @@ void Application::Initialize() {
                              const bool started = rawdraw_ui_manager_->StartLanHttpServer(ip);
                              ESP_LOGI(kTag, "LAN HTTP server toggled ON: started=%d url=http://%s/",
                                       started ? 1 : 0, ip.c_str());
+                             if (started) {
+                                 Settings(kNetworkNamespace, true).SetBool(kLanServerEnabledKey, true);
+                             }
                              if (started && sleep_timer_ != nullptr) {
                                  esp_timer_stop(sleep_timer_);
                                  ESP_LOGI(kTag, "Sync sleep timer paused while LAN HTTP server is running");
@@ -329,7 +346,8 @@ void Application::Initialize() {
                 wifi_connected_.store(true, std::memory_order_release);
                 StartSntpClockSyncOnce();
                 StartPresenceApiOnce();
-                if (rawdraw_ui_manager_ && !rawdraw_ui_manager_->IsLanHttpServerRunning()) {
+                if (rawdraw_ui_manager_ && !rawdraw_ui_manager_->IsLanHttpServerRunning() &&
+                    Settings(kNetworkNamespace, false).GetBool(kLanServerEnabledKey, kLanServerEnabledDefault)) {
                     const std::string ip = data.empty() ? WifiManager::GetInstance().GetIpAddress() : data;
                     if (!ip.empty()) {
                         const bool started = rawdraw_ui_manager_->StartLanHttpServer(ip);
@@ -349,10 +367,14 @@ void Application::Initialize() {
                 }
                 UpdateStatusBarForUi();
                 ArmSyncSleepTimer();
+                ArmWifiPowerSaveSettleTimer();
                 break;
             case NetworkEvent::Disconnected:
                 ESP_LOGI(kTag, "WiFi disconnected");
                 wifi_connected_.store(false, std::memory_order_release);
+                if (wifi_ps_settle_timer_ != nullptr) {
+                    esp_timer_stop(wifi_ps_settle_timer_);
+                }
                 if (rawdraw_ui_manager_ && rawdraw_ui_manager_->IsLanHttpServerRunning()) {
                     rawdraw_ui_manager_->StopLanHttpServer();
                 }
@@ -536,6 +558,48 @@ void Application::ArmSyncSleepTimer() {
     ESP_LOGI(kTag, "Sync sleep interval: %d minutes", interval_minutes);
     ESP_LOGI(kTag, "Scheduling sleep after sync interval: %d minutes", interval_minutes);
     ESP_ERROR_CHECK(esp_timer_start_once(sleep_timer_, delay_us));
+}
+
+// WIFI_PS_NONE (full radio power) is the connect-time default because
+// modem sleep during association/DHCP previously caused slow TCP
+// handshakes and a high HTTP failure rate (see wifi_station.cc). Once the
+// station has a stable IP, presence/calendar polling and any LAN transfers
+// are steady-state traffic rather than a fresh handshake, so we dial back
+// to BALANCED (WIFI_PS_MIN_MODEM) a few seconds after connecting to save
+// power without touching the connect-path behavior that was fixed before.
+//
+// TODO(power-optimizations): this is unverified on real hardware. Watch
+// device logs for ~60 minutes after flashing for HTTP failures / timeouts
+// from presence_api or the LAN server; if BALANCED reintroduces the old
+// failure mode, revert to leaving WIFI_PS_NONE for the whole session.
+void Application::ArmWifiPowerSaveSettleTimer() {
+    if (wifi_ps_settle_timer_ == nullptr) {
+        esp_timer_create_args_t args = {};
+        args.callback = [](void* arg) {
+            static_cast<Application*>(arg)->ApplySteadyStateWifiPowerSave();
+        };
+        args.arg = this;
+        args.dispatch_method = ESP_TIMER_TASK;
+        args.name = "app_wifi_ps_settle";
+        ESP_ERROR_CHECK(esp_timer_create(&args, &wifi_ps_settle_timer_));
+    }
+    esp_timer_stop(wifi_ps_settle_timer_);
+    constexpr int64_t kSettleDelayUs = 10 * 1000 * 1000;  // 10s
+    ESP_ERROR_CHECK(esp_timer_start_once(wifi_ps_settle_timer_, kSettleDelayUs));
+}
+
+void Application::ApplySteadyStateWifiPowerSave() {
+    if (!wifi_connected_.load(std::memory_order_acquire)) {
+        return;
+    }
+    if (rawdraw_ui_manager_ && rawdraw_ui_manager_->IsLanHttpServerRunning()) {
+        // ap_transfer_server forces WIFI_PS_NONE for the duration of a
+        // transfer session; don't fight it back down to BALANCED.
+        ESP_LOGI(kTag, "Skipping WiFi power-save switch: LAN transfer server is running");
+        return;
+    }
+    ESP_LOGI(kTag, "WiFi settled after connect; switching to BALANCED power save");
+    Board::GetInstance().SetPowerSaveLevel(PowerSaveLevel::BALANCED);
 }
 
 void Application::EnterScheduledSleep() {

@@ -57,12 +57,15 @@ private:
     AudioService audio_service_;
     std::unique_ptr<ui::RawDrawUiManager> rawdraw_ui_manager_;
     esp_timer_handle_t sleep_timer_ = nullptr;
+    esp_timer_handle_t wifi_ps_settle_timer_ = nullptr;
 
     void ArmSyncSleepTimer();
     void EnterScheduledSleep();
     void EnterManualSleep();
     void NoteButtonActivity();
     void EnterWifiConfigMode();
+    void ArmWifiPowerSaveSettleTimer();
+    void ApplySteadyStateWifiPowerSave();
 };
 
 #endif  // _APPLICATION_H_
