@@ -4,6 +4,17 @@ CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
 
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
+# Dynamic frequency scaling: CPU idles down from 240MHz to 80MHz between
+# bursts of work (WiFi/HTTP polls, SPI/e-ink refreshes, audio) instead of
+# staying pinned at 240MHz. min_freq_mhz is kept at 80 (== APB clock) so the
+# APB/PLL clock itself is never dropped or switched to XTAL — SPI (e-ink) and
+# WiFi timing are unaffected; ESP-IDF's spi_master/WiFi drivers already
+# acquire the necessary esp_pm locks during transfers. Light sleep itself
+# (light_sleep_enable) is intentionally left off for now — see
+# tmp/optimizations-todo.md for the reasoning and the required hardware
+# soak-test before enabling it.
+CONFIG_PM_ENABLE=y
+
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y

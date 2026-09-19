@@ -1,6 +1,7 @@
 #include <esp_log.h>
 #include <esp_err.h>
 #include <esp_ota_ops.h>
+#include <esp_pm.h>
 #include <nvs.h>
 #include <nvs_flash.h>
 #include <driver/gpio.h>
@@ -18,6 +19,24 @@
 // Persists across soft resets and deep sleep, cleared only on power-on.
 // Used to avoid bouncing more than once per software reset.
 static RTC_DATA_ATTR bool s_sw_reset_bounced = false;
+
+// Dynamic frequency scaling: let the CPU idle down to 80MHz (== APB clock,
+// so no XTAL clock-source switch and no APB/SPI timing impact) whenever no
+// component holds an ESP_PM_CPU_FREQ_MAX/APB_FREQ_MAX lock, instead of
+// staying pinned at 240MHz for the whole session. Light sleep is
+// deliberately left disabled here; see tmp/optimizations-todo.md.
+static void ConfigurePowerManagement() {
+    esp_pm_config_t pm_config = {};
+    pm_config.max_freq_mhz = 240;
+    pm_config.min_freq_mhz = 80;
+    pm_config.light_sleep_enable = false;
+    esp_err_t ret = esp_pm_configure(&pm_config);
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "esp_pm_configure failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "PM configured: DFS 80-240MHz, light sleep disabled");
+    }
+}
 
 static void LogNvsStats() {
     nvs_stats_t stats = {};

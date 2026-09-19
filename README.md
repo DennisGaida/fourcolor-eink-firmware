@@ -121,7 +121,39 @@ http://192.168.4.1
 
 The firmware lives in `firmware/`, based on ESP-IDF. It targets the ZecTrix ESP32-S3 4.2" e-ink screen by default, supporting the four-color BWRY screen while also keeping a 1bpp black/white screen configuration.
 
-### Build
+### Build (Windows / PowerShell)
+
+Install ESP-IDF v6.0 first via the [IDF installation manager (idf-im-ui)](https://github.com/espressif/idf-im-ui)
+if it isn't already set up; it creates the `Microsoft.v6.0.PowerShell_profile.ps1` environment
+script referenced below (default install path: `C:\Espressif\tools\`).
+
+This project is built on Windows using the ESP-IDF PowerShell environment (not Git Bash — the
+ESP-IDF tooling breaks under `MSYSTEM=MINGW64`):
+
+```powershell
+Remove-Item Env:MSYSTEM -ErrorAction SilentlyContinue
+. 'C:\Espressif\tools\Microsoft.v6.0.PowerShell_profile.ps1'
+cd firmware
+idf.py build
+```
+
+Flash (device attached, e.g. on `COM9`):
+
+```powershell
+idf.py -p COM9 flash
+```
+
+One-time setup for a fresh git worktree/clone (`firmware/sdkconfig` is gitignored, so a new
+checkout defaults to the wrong chip target):
+
+```powershell
+idf.py set-target esp32s3
+```
+
+Gotcha worth remembering: clearing `Env:MSYSTEM` first is mandatory — without it, `idf.py build`
+silently no-ops with exit code 0 and never actually compiles anything.
+
+### Build (Linux / macOS)
 
 ```bash
 cd firmware
