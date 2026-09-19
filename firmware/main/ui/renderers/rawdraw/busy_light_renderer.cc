@@ -16,6 +16,7 @@
 
 #include "busy_light_renderer.h"
 
+#include "board.h"
 #include "i18n.h"
 
 #include "common/presence_api.h"
@@ -48,6 +49,20 @@ constexpr int kHourEnd = 18;    // 6pm
 constexpr int kHourRows = kHourEnd - kHourStart;
 constexpr int kWindowStartMin = kHourStart * 60;
 constexpr int kWindowEndMin = kHourEnd * 60;
+
+// Detail face's zoomed viewport span and UP/DOWN scroll step — see
+// RenderDetailFace and BusyLightRenderer::ScrollDetailWindow.
+constexpr int kZoomSpanMinutes = 6 * 60;
+constexpr int kDetailScrollStepMinutes = 60;
+
+int ClampWindowStart(int start) {
+    return std::max(kWindowStartMin, std::min(kWindowEndMin - kZoomSpanMinutes, start));
+}
+
+int AutoWindowStart(int now_minutes) {
+    if (now_minutes < 0) return kWindowStartMin;
+    return ClampWindowStart(now_minutes - kZoomSpanMinutes / 2);
+}
 
 struct EventLayout {
     const PresenceEvent* event;
@@ -438,18 +453,15 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
     // hours at a time and scrolls that window through the day as "now"
     // advances, rather than compressing 7am-7pm onto one screen (which made
     // a 30-minute meeting a couple of pixels tall). "Now" is centered in the
-    // window — deliberately not hour-snapped, since snapping the start to an
-    // hour boundary shoved "now" off-center by up to half an hour. The grid
-    // loop below handles a non-hour-aligned window_start/window_end directly
-    // (partial first/last rows) instead of assuming uniform 60-minute rows.
-    constexpr int kZoomSpanMinutes = 6 * 60;
-    int window_start = kWindowStartMin;
-    int window_end = window_start + kZoomSpanMinutes;
-    if (now_minutes >= 0) {
-        window_start = std::max(kWindowStartMin, std::min(kWindowEndMin - kZoomSpanMinutes,
-                                                            now_minutes - kZoomSpanMinutes / 2));
-        window_end = window_start + kZoomSpanMinutes;
-    }
+    // window by default — deliberately not hour-snapped, since snapping the
+    // start to an hour boundary shoved "now" off-center by up to half an
+    // hour. UP/DOWN (see ScrollDetailWindow) can override that auto-centering
+    // with an explicit window_start. The grid loop below handles a
+    // non-hour-aligned window_start/window_end directly (partial first/last
+    // rows) instead of assuming uniform 60-minute rows.
+    const int window_start = (detail_window_start_override_ >= 0)
+        ? detail_window_start_override_ : AutoWindowStart(now_minutes);
+    const int window_end = window_start + kZoomSpanMinutes;
 
     const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
     bool calendar_busy = real_active != nullptr;
@@ -505,7 +517,7 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
         if (row_start_min > window_start) {
             DrawDashedHLine(fb, width, row_top, kLeftMargin, width - kRightMargin, border);
         }
-        char label[8];
+        char label[16];
         snprintf(label, sizeof(label), "%d", h);
         DrawText(fb, width, 4, InkCenteredTextTopYInBox(font_, label, row_top, std::min(16, row_bottom - row_top), 0),
                  label, font_, secondary);
@@ -917,25 +929,72 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     DrawText(fb, width, chevron_c.x - 3, InkCenteredTextTopY(font_, ">", chevron_c.y, 0), ">", font_, BLACK);
 }
 
+void BusyLightRenderer::ScrollDetailWindow(int delta_minutes) {
+    const int current_start = (detail_window_start_override_ >= 0)
+        ? detail_window_start_override_ : AutoWindowStart(CurrentLocalMinutes());
+    const int new_start = ClampWindowStart(current_start + delta_minutes);
+    if (new_start == current_start) {
+        // Already at the day's start/end — the clamp absorbed the whole
+        // step, so this press was a no-op. Application::OnUpClick/
+        // OnDownClick already flashes the activity LED unconditionally
+        // before HandleInput runs, so signal "rejected" with a rapid
+        // double-blink on top of that rather than trying to suppress it.
+        Board::GetInstance().FlashErrorLed();
+        return;
+    }
+    detail_window_start_override_ = new_start;
+    needs_full_refresh_ = true;
+}
+
 bool BusyLightRenderer::HandleInput(const ButtonEvent& event) {
     switch (event.type) {
         case ButtonEvent::kBootClick:
             view_ = (view_ == View::kDefault) ? View::kDetail : View::kDefault;
+            // Always re-enter a view at its auto-centered-on-now window
+            // rather than remembering where a previous visit to the detail
+            // face was scrolled to — simplest mental model, and means a
+            // scroll never "gets lost" in a state you have to remember to
+            // undo.
+            detail_window_start_override_ = -1;
             needs_full_refresh_ = true;
             return true;
+        // On the detail face, UP/DOWN scroll the zoomed day-grid window
+        // (see RenderDetailFace) one hour at a time; a press that's already
+        // at the clamped start/end of the day (kWindowStartMin/kWindowEndMin)
+        // is a no-op signaled by a rapid double-blink instead of the usual
+        // single activity-pulse blink, so the clamp is felt, not just seen
+        // on the next 15-25s e-ink refresh.
 #if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
-        // Debug/demo cycles, only compiled in when CONFIG_BUSY_LIGHT_DEBUG_CYCLE
-        // is set (see Kconfig.projbuild). UP steps through the four status
-        // tiers, DOWN through the camera/presenting combinations; both only
-        // affect the header (word, swatch, band, human line, camera,
-        // presenting banner), never the real calendar underneath.
+        // On the default face (only compiled in when CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        // is set — see Kconfig.projbuild), UP/DOWN instead cycle the debug/demo
+        // status override: UP steps through the four status tiers, DOWN
+        // through the camera/presenting combinations. Both only affect the
+        // header (word, swatch, band, human line, camera, presenting
+        // banner), never the real calendar underneath.
         case ButtonEvent::kUpClick:
+            if (view_ == View::kDetail) {
+                ScrollDetailWindow(-kDetailScrollStepMinutes);
+                return true;
+            }
             debug_tier_ = static_cast<DebugTier>((static_cast<int>(debug_tier_) + 1) % 4);
             needs_full_refresh_ = true;
             return true;
         case ButtonEvent::kDownClick:
+            if (view_ == View::kDetail) {
+                ScrollDetailWindow(kDetailScrollStepMinutes);
+                return true;
+            }
             debug_av_index_ = (debug_av_index_ + 1) % kDebugAvStateCount;
             needs_full_refresh_ = true;
+            return true;
+#else   // !CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        case ButtonEvent::kUpClick:
+            if (view_ != View::kDetail) return false;
+            ScrollDetailWindow(-kDetailScrollStepMinutes);
+            return true;
+        case ButtonEvent::kDownClick:
+            if (view_ != View::kDetail) return false;
+            ScrollDetailWindow(kDetailScrollStepMinutes);
             return true;
 #endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
         case ButtonEvent::kUpLongPress:

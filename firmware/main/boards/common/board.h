@@ -76,6 +76,10 @@ public:
     virtual bool IsFactoryTestMode() const { return false; }
     virtual void EnterFactoryTestFlow() {}
     virtual void FlashActivityLed() {}
+    // A rapid double-blink, distinct from FlashActivityLed()'s single pulse —
+    // for signaling a rejected/no-op input (e.g. a scroll hitting its clamp),
+    // not just "a button was pressed".
+    virtual void FlashErrorLed() {}
     virtual void SetNetworkEventCallback(NetworkEventCallback callback) { (void)callback; }
     virtual const char* GetNetworkStateIcon() = 0;
     virtual bool GetBatteryLevel(int &level, bool& charging, bool& discharging);
