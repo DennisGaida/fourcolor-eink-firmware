@@ -15,6 +15,14 @@ The firmware polls two endpoints, split because the data behind them changes at 
 
 Both are merged into a single `PresenceStatus` (`firmware/main/common/presence_types.h`) before reaching the renderer, so `firmware/main/ui/renderers/rawdraw/busy_light_renderer.cc` doesn't need to know about the split. On a fetch failure or a field missing from a response, the previous value for that field is kept (last-known-good) — a bad poll never blanks the display.
 
+### Redraw behavior: polling is cheap, e-ink refresh is not
+
+Every poll used to trigger an unconditional full-screen redraw, whether or not anything actually changed — and since the panel forces a hardware full refresh every 10 partial refreshes (`EpdRefreshScheduler`, `firmware/main/ui/epd_refresh.h`), that meant a 15-25s full refresh every 10 × 90s = 15 minutes, forever, even with an unchanging calendar and idle webcam. `BusyLightRenderer::Update()` (`busy_light_renderer.cc`) now compares the incoming status (plus time-derived state — which event is active/next, how many events have already ended, whether the 5pm tomorrow-line cutoff has passed) against what's actually on screen, and skips the redraw entirely when nothing visibly changed.
+
+When something did change, the detail face (`View::kDetail`) can usually settle for a small dirty-rect refresh of just the header strip (swatch/word/camera icon, `{0, kHeaderTop, width, kHeaderHeight}`) instead of the whole panel, since the day grid below it doesn't read any AV state. The default/hallway face has no equivalent split — AV state feeds the band, headline word, human line, and presenting banner across most of the page — so any change there still redraws full-screen.
+
+Net effect: polling frequency and screen-refresh cost are now decoupled. A poll that finds nothing new costs a small HTTP request and nothing else; only a poll that finds something new pays for a redraw, and only sometimes pays for a full one. One deliberate trade-off this introduces: the "now" position/past-event styling only updates on a poll boundary, same as before, not continuously.
+
 ## Contract: `GET /calendar/today`
 
 ```json

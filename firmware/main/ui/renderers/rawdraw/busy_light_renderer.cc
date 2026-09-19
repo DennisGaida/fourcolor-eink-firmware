@@ -55,6 +55,10 @@ constexpr int kWindowEndMin = kHourEnd * 60;
 constexpr int kZoomSpanMinutes = 6 * 60;
 constexpr int kDetailScrollStepMinutes = 60;
 
+// Shared with the change-detection signature below (RenderDefaultFace used
+// to have its own local copy of this literal).
+constexpr int kEndOfWorkdayMinutes = 17 * 60;
+
 int ClampWindowStart(int start) {
     return std::max(kWindowStartMin, std::min(kWindowEndMin - kZoomSpanMinutes, start));
 }
@@ -182,6 +186,61 @@ const PresenceEvent* NextEvent(const PresenceStatus& status, int now_minutes) {
         if (!next || ev.start_minutes < next->start_minutes) next = &ev;
     }
     return next;
+}
+
+// Field-by-field comparison (title included: the detail-face grid renders
+// it — see the title truncation in RenderDetailFace's grid loop). Used by
+// BusyLightRenderer::Update() to decide whether a poll actually changed
+// anything worth redrawing for.
+bool EventsEqual(const std::vector<PresenceEvent>& a, const std::vector<PresenceEvent>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].start_minutes != b[i].start_minutes ||
+            a[i].end_minutes != b[i].end_minutes ||
+            a[i].tier != b[i].tier ||
+            a[i].title != b[i].title) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Everything time-derived that can change what's on screen even when the
+// raw PresenceStatus payload is byte-identical to the last redraw — e.g.
+// "now" crossing a meeting's start/end minute (flips the active/next event,
+// and each grid row's past/future styling), or the 5pm tomorrow-line cutoff.
+// past_event_count (rather than tracking every event's past/future flag
+// individually) is enough to catch any such crossing: within one fixed
+// events list, it can only increase as now_minutes advances.
+//
+// NOTE: this deliberately does NOT make the "now" line/tick itself move on
+// every minute — it only moves when Update() is called (poll-driven, same
+// as before this change), and now only redraws when something above
+// actually crossed a boundary. That's an intentional trade-off once
+// kMockCurrentTime flips to real wall-clock time: the now-marker reads a
+// few pixels stale between meaningful state changes rather than forcing a
+// full e-ink refresh every poll just to nudge it. See
+// docs/optimizations-todo.md.
+struct TimeDerivedSignature {
+    int32_t active_start = -1;
+    int32_t active_end = -1;
+    int32_t next_start = -1;
+    int32_t past_event_count = 0;
+    bool tomorrow_banner_visible = false;
+};
+
+TimeDerivedSignature ComputeTimeDerivedSignature(const PresenceStatus& status, int now_minutes) {
+    TimeDerivedSignature sig;
+    const PresenceEvent* active = ActiveEvent(status, now_minutes);
+    const PresenceEvent* next = NextEvent(status, now_minutes);
+    sig.active_start = active ? active->start_minutes : -1;
+    sig.active_end = active ? active->end_minutes : -1;
+    sig.next_start = next ? next->start_minutes : -1;
+    for (const auto& ev : status.events) {
+        if (ev.end_minutes <= now_minutes) sig.past_event_count++;
+    }
+    sig.tomorrow_banner_visible = status.tomorrow_valid && now_minutes >= kEndOfWorkdayMinutes;
+    return sig;
 }
 
 // Detail-grid fill / header-swatch color: internal reads as "nothing special"
@@ -866,7 +925,6 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     // differs by language: English puts nothing before "No meetings" and
     // "tomorrow" after; Chinese puts "明天" (tomorrow) first in both cases.
     constexpr int kTomorrowLineH = 18;
-    constexpr int kEndOfWorkdayMinutes = 17 * 60;
     if (now_minutes >= kEndOfWorkdayMinutes && current_.tomorrow_valid) {
         // kSpacingXS clearance from the footer divider: with no gap, a
         // descender (e.g. the "g" in "meeting") lands right on the divider
@@ -1009,8 +1067,59 @@ bool BusyLightRenderer::HandleInput(const ButtonEvent& event) {
 }
 
 void BusyLightRenderer::Update(const PresenceStatus& status) {
+    const int now_minutes = CurrentLocalMinutes();
+    const bool first_update = !has_rendered_once_;
+
+    const bool events_changed = !EventsEqual(last_evaluated_.events, status.events);
+    const bool av_changed = last_evaluated_.in_call != status.in_call ||
+                             last_evaluated_.webcam_active != status.webcam_active ||
+                             last_evaluated_.presenting != status.presenting;
+    const bool other_raw_changed = last_evaluated_.valid != status.valid ||
+                                    last_evaluated_.tomorrow_valid != status.tomorrow_valid ||
+                                    last_evaluated_.tomorrow_first_event_minutes != status.tomorrow_first_event_minutes;
+
+    const TimeDerivedSignature time_sig = ComputeTimeDerivedSignature(status, now_minutes);
+    const bool time_derived_changed = time_sig.active_start != last_active_start_ ||
+                                       time_sig.active_end != last_active_end_ ||
+                                       time_sig.next_start != last_next_start_ ||
+                                       time_sig.past_event_count != last_past_event_count_ ||
+                                       time_sig.tomorrow_banner_visible != last_tomorrow_banner_visible_;
+
+    const bool calendar_related_changed = events_changed || other_raw_changed || time_derived_changed;
+    const bool anything_changed = first_update || calendar_related_changed || av_changed;
+
     current_ = status;
+
+    if (!anything_changed) {
+        // Identical to what's already on screen (modulo last_updated_unix,
+        // which nothing renders) — skip the redraw entirely rather than
+        // burning a 15-25s e-ink refresh cycle for pixels that wouldn't
+        // change. See docs/optimizations-todo.md.
+        pending_visible_change_ = false;
+        return;
+    }
+
+    // On the detail face, an AV-only change (webcam/in_call/presenting)
+    // with the calendar grid itself untouched only moves the header strip
+    // — the day grid below it doesn't read any of those fields (see
+    // RenderDetailFace). The default face has no such split: AV state
+    // feeds the band/headline/human-line/presenting-banner across most of
+    // the page, so any change there still needs a full-screen redraw.
+    if (!first_update && view_ == View::kDetail && !calendar_related_changed) {
+        pending_dirty_rect_ = Rect{0, kHeaderTop, width_, kHeaderHeight};
+    } else {
+        pending_dirty_rect_ = Rect{0, 0, 0, 0};
+    }
+    pending_visible_change_ = true;
     needs_full_refresh_ = true;
+
+    last_evaluated_ = status;
+    last_active_start_ = time_sig.active_start;
+    last_active_end_ = time_sig.active_end;
+    last_next_start_ = time_sig.next_start;
+    last_past_event_count_ = time_sig.past_event_count;
+    last_tomorrow_banner_visible_ = time_sig.tomorrow_banner_visible;
+    has_rendered_once_ = true;
 }
 
 }  // namespace rawdraw

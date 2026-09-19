@@ -51,6 +51,18 @@ public:
     // Data interface
     void Update(const PresenceStatus& status);
 
+    // Change-detection result from the last Update() call: whether anything
+    // actually visible changed (vs. an identical poll result redrawing the
+    // panel for nothing), and if so, whether it can be satisfied with a
+    // small dirty rect instead of a full-screen redraw. Consuming clears the
+    // pending flag; RawDrawUiManager::UpdatePresenceStatus is the only
+    // caller.
+    bool HasPendingVisibleChange() const { return pending_visible_change_; }
+    Rect ConsumeDirtyRect() {
+        pending_visible_change_ = false;
+        return pending_dirty_rect_;
+    }
+
 private:
     void RenderDefaultFace(uint8_t* fb, int width, int height);
     void RenderDetailFace(uint8_t* fb, int width, int height);
@@ -76,6 +88,24 @@ private:
 #endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
     const lv_font_t* font_ = nullptr;
     const lv_font_t* title_font_ = nullptr;
+
+    // Snapshot of the data as of the last time we actually redrew (not the
+    // last time Update() was called — see the change-detection comment
+    // there). Compared against the incoming status on each Update() to
+    // decide whether a redraw is warranted at all.
+    PresenceStatus last_evaluated_;
+    bool has_rendered_once_ = false;
+    // Time-derived pieces of the two faces' rendering that can change even
+    // when last_evaluated_ is byte-identical to the incoming status — e.g.
+    // "now" crossing a meeting's start/end minute, or the 5pm tomorrow-line
+    // cutoff. See ComputeTimeDerivedSignature() in the .cc file.
+    int32_t last_active_start_ = -1;
+    int32_t last_active_end_ = -1;
+    int32_t last_next_start_ = -1;
+    int32_t last_past_event_count_ = -1;
+    bool last_tomorrow_banner_visible_ = false;
+    bool pending_visible_change_ = true;
+    Rect pending_dirty_rect_{0, 0, 0, 0};  // {0,0,0,0} == full screen
 };
 
 }  // namespace rawdraw

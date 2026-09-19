@@ -1734,7 +1734,13 @@ void RawDrawUiManager::UpdatePresenceStatus(const PresenceStatus& status) {
 
     busy_light_renderer_->Update(status);
 
-    if (current_page_ == RawDrawPageId::BusyLight) {
+    if (current_page_ != RawDrawPageId::BusyLight) return;
+    if (!busy_light_renderer_->HasPendingVisibleChange()) return;
+
+    const rawdraw::Rect dirty = busy_light_renderer_->ConsumeDirtyRect();
+    if (dirty.w > 0 && dirty.h > 0) {
+        RefreshActivePageRect(dirty, false);
+    } else {
         RefreshActivePage(false);
     }
 }
