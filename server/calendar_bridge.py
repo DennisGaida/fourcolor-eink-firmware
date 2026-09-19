@@ -43,6 +43,9 @@ Usage: copy server/.env.example to server/.env, fill in real values, then
 just run the script — it loads server/.env itself (no `source`/pip install
 needed). A real environment variable of the same name always wins over the
 file, so `FOO=bar python3 calendar_bridge.py` still overrides server/.env.
+Any variable also accepts a `<VAR>_FILE` counterpart (e.g. HA_TOKEN_FILE)
+to read its value from a file instead — the standard Docker/Kubernetes
+secrets convention (see env_file.py's getenv()).
 
     python3 calendar_bridge.py [--port 8080] [--env-file path/to/.env]
 """
@@ -57,22 +60,22 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from env_file import load_default_env_file
+from env_file import load_default_env_file, getenv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("calendar_bridge")
 
 _default_env_file = load_default_env_file(__file__)
 
-CALENDAR_SOURCE_URL = os.environ.get("CALENDAR_SOURCE_URL", "")
-CALENDAR_SOURCE_SECRET = os.environ.get("CALENDAR_SOURCE_SECRET", "")
+CALENDAR_SOURCE_URL = getenv("CALENDAR_SOURCE_URL", "")
+CALENDAR_SOURCE_SECRET = getenv("CALENDAR_SOURCE_SECRET", "")
 CALENDAR_FETCH_TIMEOUT_SECONDS = 10
 
-HA_URL = os.environ.get("HA_URL", "").rstrip("/")
-HA_TOKEN = os.environ.get("HA_TOKEN", "")
-HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
-HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.pw0q6czd_webcamactive")
-HA_TEAMS_STATUS_SENSOR = os.environ.get("HA_TEAMS_STATUS_SENSOR", "sensor.teams_status")
+HA_URL = getenv("HA_URL", "").rstrip("/")
+HA_TOKEN = getenv("HA_TOKEN", "")
+HA_CALL_SENSOR = getenv("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
+HA_WEBCAM_SENSOR = getenv("HA_WEBCAM_SENSOR", "binary_sensor.pw0q6czd_webcamactive")
+HA_TEAMS_STATUS_SENSOR = getenv("HA_TEAMS_STATUS_SENSOR", "sensor.teams_status")
 # Comma-separated, case-insensitive: HA_TEAMS_STATUS_SENSOR's state is
 # compared against this list to derive isPresenting — there's no dedicated
 # "presenting" binary sensor, just this text state. Observed values from
@@ -82,7 +85,7 @@ HA_TEAMS_STATUS_SENSOR = os.environ.get("HA_TEAMS_STATUS_SENSOR", "sensor.teams_
 # the two statuses; HA just passes that through).
 HA_PRESENTING_STATES = {
     s.strip().lower()
-    for s in os.environ.get("HA_PRESENTING_STATES", "Do Not Disturb").split(",")
+    for s in getenv("HA_PRESENTING_STATES", "Do Not Disturb").split(",")
     if s.strip()
 }
 HA_FETCH_TIMEOUT_SECONDS = 5

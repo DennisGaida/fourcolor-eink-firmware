@@ -54,7 +54,9 @@ not in the firmware, so the real subject never has to leave your network.
 Usage: copy server/.env.example to server/.env, fill in real values, then
 just run the script — it loads server/.env itself (no `source`/pip install
 needed). A real environment variable of the same name always wins over the
-file.
+file. Any variable also accepts a `<VAR>_FILE` counterpart (e.g.
+HA_TOKEN_FILE) to read its value from a file instead — the standard
+Docker/Kubernetes secrets convention (see env_file.py's getenv()).
 
     python3 presence_bridge.py [--port 8080] [--redact-titles] [--env-file path/to/.env]
 """
@@ -69,20 +71,20 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from env_file import load_default_env_file
+from env_file import load_default_env_file, getenv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("presence_bridge")
 
 _default_env_file = load_default_env_file(__file__)
 
-HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123").rstrip("/")
-HA_TOKEN = os.environ.get("HA_TOKEN", "")
-HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
-HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.webcam_active")
-HA_PRESENTING_SENSOR = os.environ.get("HA_PRESENTING_SENSOR", "")
-HA_CALENDAR_ENTITY = os.environ.get("HA_CALENDAR_ENTITY", "")
-HA_TIME_ZONE = os.environ.get("HA_TIME_ZONE", "W. Europe Standard Time")
+HA_URL = getenv("HA_URL", "http://homeassistant.local:8123").rstrip("/")
+HA_TOKEN = getenv("HA_TOKEN", "")
+HA_CALL_SENSOR = getenv("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
+HA_WEBCAM_SENSOR = getenv("HA_WEBCAM_SENSOR", "binary_sensor.webcam_active")
+HA_PRESENTING_SENSOR = getenv("HA_PRESENTING_SENSOR", "")
+HA_CALENDAR_ENTITY = getenv("HA_CALENDAR_ENTITY", "")
+HA_TIME_ZONE = getenv("HA_TIME_ZONE", "W. Europe Standard Time")
 # Comma-separated, case-insensitive substrings matched against the raw event
 # title (before --redact-titles strips it) to pick the door-fill tier the
 # firmware renders. No HA signal maps cleanly to "how important is this
@@ -91,9 +93,9 @@ HA_TIME_ZONE = os.environ.get("HA_TIME_ZONE", "W. Europe Standard Time")
 # real Microsoft Graph-backed feed derives "solo" from actual attendee count;
 # HA's calendar API doesn't expose attendees, so solo here is a title guess
 # same as the other two tiers, not a real headcount.
-HA_CUSTOMER_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_CUSTOMER_KEYWORDS", "customer,client").split(",") if k.strip()]
-HA_LEADERSHIP_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_LEADERSHIP_KEYWORDS", "ceo,cfo,coo,leadership,board").split(",") if k.strip()]
-HA_SOLO_KEYWORDS = [k.strip().lower() for k in os.environ.get("HA_SOLO_KEYWORDS", "lunch,focus,personal,doctor,dentist").split(",") if k.strip()]
+HA_CUSTOMER_KEYWORDS = [k.strip().lower() for k in getenv("HA_CUSTOMER_KEYWORDS", "customer,client").split(",") if k.strip()]
+HA_LEADERSHIP_KEYWORDS = [k.strip().lower() for k in getenv("HA_LEADERSHIP_KEYWORDS", "ceo,cfo,coo,leadership,board").split(",") if k.strip()]
+HA_SOLO_KEYWORDS = [k.strip().lower() for k in getenv("HA_SOLO_KEYWORDS", "lunch,focus,personal,doctor,dentist").split(",") if k.strip()]
 
 
 def classify_tier(title: str) -> str:

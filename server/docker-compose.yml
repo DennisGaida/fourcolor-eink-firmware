@@ -23,3 +23,23 @@ services:
     # Uncomment to run the all-Home-Assistant alternative instead of the
     # default calendar_bridge.py (see Dockerfile / presence_bridge.py):
     # command: ["presence_bridge.py", "--port", "8080"]
+    #
+    # Docker secrets alternative for CALENDAR_SOURCE_SECRET/HA_TOKEN
+    # instead of putting them in .env: every env var read by the bridge
+    # scripts also accepts a `<VAR>_FILE` variant pointing at a file (see
+    # server/env_file.py's getenv()), which is exactly how Docker/Swarm/
+    # Compose secrets get mounted (as /run/secrets/<secret_name>).
+    # Uncomment below (and drop the plaintext values from .env) to use it:
+    # environment:
+    #   - CALENDAR_SOURCE_SECRET_FILE=/run/secrets/calendar_source_secret
+    #   - HA_TOKEN_FILE=/run/secrets/ha_token
+    # secrets:
+    #   - calendar_source_secret
+    #   - ha_token
+
+# secrets:
+#   calendar_source_secret:
+#     file: ./secrets/calendar_source_secret.txt
+#   ha_token:
+#     file: ./secrets/ha_token.txt
+

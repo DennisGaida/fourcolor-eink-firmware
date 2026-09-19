@@ -55,6 +55,7 @@ server/*.log
 server/todo.db
 server/*.db
 server/firmware/
+server/secrets/
 
 # Generated archives/binaries
 *.bin

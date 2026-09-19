@@ -29,6 +29,27 @@ def load_env_file(path: str) -> None:
             os.environ[key] = value
 
 
+def getenv(key: str, default: str = "") -> str:
+    """Like os.environ.get(key, default), but also supports the long-
+    standing `<KEY>_FILE` Docker/Kubernetes secrets convention: if
+    `<KEY>_FILE` is set, its content is read from that path (e.g.
+    /run/secrets/<name> for a `docker secret`/Compose secret) and used as
+    the value instead, taking priority over `KEY` itself. This lets
+    CALENDAR_SOURCE_SECRET/HA_TOKEN/etc. be supplied as files rather than
+    plaintext environment variables, without adding an extra dependency.
+    A trailing newline is stripped, since secret files are commonly
+    written ending in one."""
+    file_path = os.environ.get(f"{key}_FILE")
+    if file_path:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read().rstrip("\n")
+        except OSError as exc:
+            print(f"Failed to read {key}_FILE={file_path!r}: {exc}", file=sys.stderr)
+            sys.exit(1)
+    return os.environ.get(key, default)
+
+
 def load_default_env_file(caller_file: str, arg_name: str = "--env-file") -> str:
     """Looks for `arg_name value` in sys.argv (argparse hasn't run yet at
     this point in the importing script), else falls back to a `.env` file

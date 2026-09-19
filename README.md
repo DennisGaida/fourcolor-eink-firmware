@@ -69,6 +69,11 @@ Commits](#commit-messages) touching `server/` since the last `bridge-v*`
 git tag (`feat:` -> minor, `fix:`/`perf:` -> patch, a `!:` marker or
 `BREAKING CHANGE:` footer -> major).
 
+Every config variable also supports the standard `<VAR>_FILE` Docker/
+Kubernetes secrets convention (e.g. `HA_TOKEN_FILE=/run/secrets/ha_token`)
+as an alternative to putting the raw secret in `.env` - see the commented
+`secrets:` example in `server/docker-compose.yml`.
+
 ## Backend Service
 
 The backend entry point is `server/llmserve.py`, best managed via `server/start.sh`. Default service ports:
