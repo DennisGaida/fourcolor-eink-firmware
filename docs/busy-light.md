@@ -4,7 +4,7 @@ This document records where the busy-light feature (office-door presence display
 
 ## Status
 
-Contract-first, not backend-first: the firmware, the mock server, and the JSON contract between them are built and working. No real backend (Microsoft Graph, Home Assistant, Power Automate, ...) is wired up end-to-end yet — `server/presence_bridge.py` is a Home Assistant sketch, not a deployed bridge.
+Contract-first, not backend-first: the firmware, the mock server, and the JSON contract between them are built and working. `server/calendar_bridge.py` is a real bridge — `/calendar/today` against a calendar webhook, `/live` against Home Assistant sensors — but the firmware is still pointed at the mock server (see below) pending an on-device test pass.
 
 The firmware polls two endpoints, split because the data behind them changes at very different rates (see `firmware/main/common/presence_api.h`):
 
@@ -81,8 +81,8 @@ Three independent implementations of the same contract, for three different purp
 | Script | Purpose |
 | --- | --- |
 | `server/mock_presence_server.py` | Pure mock — returns hardcoded data on every request, edited by hand to try scenarios. No real backend queried. This is what's actually been used for firmware dev so far, and what the firmware still points at (see below). |
-| `server/calendar_bridge.py` | Real `/calendar/today`, backed by a calendar webhook — URL and an `x-calendar-secret` header value are read from the `CALENDAR_SOURCE_URL`/`CALENDAR_SOURCE_SECRET` environment variables (never hardcoded, never logged, never committed). Deliberately source-agnostic: it only knows the webhook returns JSON already shaped like this contract, not what tool sits behind it. The upstream response is validated/rebuilt field-by-field rather than blindly proxied. `/live` is a static stub (`isPresenting`/`isInCall`/`isWebcamActive` all `false`) — no real presence backend (Home Assistant or otherwise) is wired up yet; that's a separate, later step. |
-| `server/presence_bridge.py` | Sketch of a real bridge, backed by Home Assistant: two binary sensors for call/webcam state, plus HA's calendar API for `/calendar/today`. `tier` is derived from keyword lists matched against the event title (`HA_CUSTOMER_KEYWORDS`, `HA_LEADERSHIP_KEYWORDS`, `HA_SOLO_KEYWORDS`) since HA doesn't expose anything closer to "how important is this meeting" or attendee counts. Never deployed against a real HA instance as part of this project — treat it as a starting point, not a finished bridge. |
+| `server/calendar_bridge.py` | Real bridge for both endpoints. `/calendar/today` is backed by a calendar webhook — URL and an `x-calendar-secret` header value are read from the `CALENDAR_SOURCE_URL`/`CALENDAR_SOURCE_SECRET` environment variables (never hardcoded, never logged, never committed). Deliberately source-agnostic: it only knows the webhook returns JSON already shaped like this contract, not what tool sits behind it. The upstream response is validated/rebuilt field-by-field rather than blindly proxied. `/live` is backed by Home Assistant: `isInCall`/`isWebcamActive` come from binary sensors (`HA_CALL_SENSOR`/`HA_WEBCAM_SENSOR`), `isPresenting` from comparing a text sensor's state (`HA_TEAMS_STATUS_SENSOR`) against `HA_PRESENTING_STATES`. All four entity IDs are configurable env vars since they depend on whatever publishes them into HA. Falls back to the "nothing going on" defaults if `HA_URL`/`HA_TOKEN` aren't set. |
+| `server/presence_bridge.py` | Alternate all-HA sketch: same two binary sensors for call/webcam state as `calendar_bridge.py`, but also sources `/calendar/today` from HA's calendar API instead of a webhook. `tier` is derived from keyword lists matched against the event title (`HA_CUSTOMER_KEYWORDS`, `HA_LEADERSHIP_KEYWORDS`, `HA_SOLO_KEYWORDS`) since HA doesn't expose anything closer to "how important is this meeting" or attendee counts. Never deployed against a real HA instance as part of this project — treat it as a starting point, not a finished bridge. Superseded by `calendar_bridge.py` for setups that already have a calendar webhook. |
 
 The firmware (`kPresenceBridgeEndpoint` in `firmware/main/application.cc`) is currently pointed at `mock_presence_server.py`, not `calendar_bridge.py` — the switch to real calendar data is a deliberate later step, made once the tomorrow-footer line (see above) has been through a mocked dev/test pass.
 
@@ -96,7 +96,7 @@ Point the firmware at it via `presence_api_set_endpoint()`, or by editing `kPres
 
 ## Not yet built
 
-- No real backend integration (Graph, Power Automate, or a deployed HA instance) — `presence_bridge.py` is unverified against live HA data. `calendar_bridge.py` covers the calendar half against a real webhook, but `/live` there is still a static stub.
+- `calendar_bridge.py` covers both halves against real sources now (calendar webhook + Home Assistant), but is unverified end-to-end against live HA data — needs a real `HA_URL`/`HA_TOKEN` and a run against the actual sensors before the firmware gets pointed at it.
 - The poll-vs-push decision for a real backend is still open; battery impact is the deciding factor, not settled yet.
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
 - The device-side HTTP response buffer is fixed at 8KB (`firmware/main/common/presence_api.cc`) — sized for a busy single day with long titles, not for a third `days` entry or an unusually large participant list.

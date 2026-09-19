@@ -21,21 +21,29 @@ a malformed or unexpected upstream response (wrong types, an unknown
 `tier`, extra fields) can't crash this handler or reach the firmware
 unsanitized.
 
-/live has no real source wired up yet (see server/presence_bridge.py's
-Home Assistant sketch for the shape that will eventually take) — it always
-returns the "nothing going on" defaults for now.
+/live is backed by Home Assistant: two binary sensors (in-call, webcam
+active) plus a text sensor whose state names the current Teams presence
+(read to detect "Presenting"). Entity IDs are configurable via env vars
+since they're specific to whatever publishes them into HA (a Teams status
+add-in, an MQTT bridge, etc.) — see server/presence_bridge.py's docstring
+for the same sensors used as an all-HA alternative to this webhook+HA
+split. If HA_URL/HA_TOKEN aren't set, /live falls back to the "nothing
+going on" defaults rather than erroring.
 
-The secret is provided ONLY via the CALENDAR_SOURCE_SECRET environment
-variable, set at process start — never hardcode it, never commit it.
+Secrets are provided ONLY via environment variables, set at process
+start — never hardcode them, never commit them.
 
 On any internal error, /calendar/today still returns HTTP 200 with an
-empty `days` list so the firmware's HttpGet() succeeds and
-ParseCalendarJson() falls back to keeping last-known-good data (see
-firmware/main/common/presence_api.cc) rather than erroring loudly.
+empty `days` list, and /live still returns HTTP 200 with the "nothing
+going on" defaults, so the firmware's HttpGet() succeeds and
+ParseCalendarJson()/ParseLiveJson() fall back to keeping last-known-good
+data (see firmware/main/common/presence_api.cc) rather than erroring loudly.
 
 Usage:
     CALENDAR_SOURCE_URL=https://example.invalid/webhook/calendar \\
     CALENDAR_SOURCE_SECRET=your_secret \\
+    HA_URL=https://ha.example.invalid \\
+    HA_TOKEN=your_long_lived_access_token \\
     python3 calendar_bridge.py [--port 8080]
 """
 
@@ -55,6 +63,21 @@ logger = logging.getLogger("calendar_bridge")
 CALENDAR_SOURCE_URL = os.environ.get("CALENDAR_SOURCE_URL", "")
 CALENDAR_SOURCE_SECRET = os.environ.get("CALENDAR_SOURCE_SECRET", "")
 CALENDAR_FETCH_TIMEOUT_SECONDS = 10
+
+HA_URL = os.environ.get("HA_URL", "")
+HA_TOKEN = os.environ.get("HA_TOKEN", "")
+HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
+HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.pw0q6czd_webcamactive")
+HA_TEAMS_STATUS_SENSOR = os.environ.get("HA_TEAMS_STATUS_SENSOR", "sensor.teams_status")
+# Comma-separated, case-insensitive: HA_TEAMS_STATUS_SENSOR's state is
+# compared against this list to derive isPresenting — there's no dedicated
+# "presenting" binary sensor, just this text state.
+HA_PRESENTING_STATES = {
+    s.strip().lower()
+    for s in os.environ.get("HA_PRESENTING_STATES", "Presenting").split(",")
+    if s.strip()
+}
+HA_FETCH_TIMEOUT_SECONDS = 5
 
 VALID_TIERS = {"solo", "internal", "leadership", "customer"}
 
@@ -135,12 +158,33 @@ def fetch_calendar_today() -> dict:
     }
 
 
+def _ha_get_state(entity_id: str):
+    if not entity_id or not HA_URL or not HA_TOKEN:
+        return None
+    req = Request(
+        f"{HA_URL}/api/states/{entity_id}",
+        headers={"Authorization": f"Bearer {HA_TOKEN}"},
+    )
+    try:
+        with urlopen(req, timeout=HA_FETCH_TIMEOUT_SECONDS) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+        return payload.get("state")
+    except (URLError, HTTPError, ValueError) as e:
+        logger.warning("Failed to read %s from Home Assistant: %s", entity_id, e)
+        return None
+
+
+def _ha_get_binary(entity_id: str) -> bool:
+    return _ha_get_state(entity_id) == "on"
+
+
 def build_live() -> dict:
+    teams_status = (_ha_get_state(HA_TEAMS_STATUS_SENSOR) or "").strip().lower()
     return {
         "updated_at": now_iso(),
-        "isPresenting": False,
-        "isInCall": False,
-        "isWebcamActive": False,
+        "isPresenting": teams_status in HA_PRESENTING_STATES,
+        "isInCall": _ha_get_binary(HA_CALL_SENSOR),
+        "isWebcamActive": _ha_get_binary(HA_WEBCAM_SENSOR),
     }
 
 
@@ -187,10 +231,12 @@ def main():
         logger.warning("CALENDAR_SOURCE_URL not set — /calendar/today will return empty")
     if not CALENDAR_SOURCE_SECRET:
         logger.warning("CALENDAR_SOURCE_SECRET not set — calendar source requests will be sent without a secret")
+    if not HA_URL or not HA_TOKEN:
+        logger.warning("HA_URL/HA_TOKEN not set — /live will always report the 'nothing going on' defaults")
 
     server = ThreadingHTTPServer(("0.0.0.0", args.port), make_handler())
-    logger.info("Calendar bridge listening on :%d (source=%s)",
-                args.port, CALENDAR_SOURCE_URL or "<unset>")
+    logger.info("Calendar bridge listening on :%d (calendar_source=%s, ha_url=%s)",
+                args.port, CALENDAR_SOURCE_URL or "<unset>", HA_URL or "<unset>")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
