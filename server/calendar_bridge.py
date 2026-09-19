@@ -68,7 +68,7 @@ CALENDAR_SOURCE_URL = os.environ.get("CALENDAR_SOURCE_URL", "")
 CALENDAR_SOURCE_SECRET = os.environ.get("CALENDAR_SOURCE_SECRET", "")
 CALENDAR_FETCH_TIMEOUT_SECONDS = 10
 
-HA_URL = os.environ.get("HA_URL", "")
+HA_URL = os.environ.get("HA_URL", "").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
 HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.pw0q6czd_webcamactive")
@@ -84,6 +84,11 @@ HA_PRESENTING_STATES = {
 HA_FETCH_TIMEOUT_SECONDS = 5
 
 VALID_TIERS = {"solo", "internal", "leadership", "customer"}
+
+# Some reverse proxies (Cloudflare included) block urllib's default
+# "Python-urllib/3.x" User-Agent outright (HTTP 403 with no useful body) —
+# a plain browser-looking one avoids that without meaning anything else.
+_HTTP_USER_AGENT = {"User-Agent": "Mozilla/5.0 (compatible; fourcolor-eink-firmware/calendar_bridge)"}
 
 
 def now_iso() -> str:
@@ -136,7 +141,7 @@ def fetch_calendar_today() -> dict:
         logger.error("CALENDAR_SOURCE_URL not set — returning empty calendar")
         return empty_calendar_payload()
 
-    req = Request(CALENDAR_SOURCE_URL, headers={"x-calendar-secret": CALENDAR_SOURCE_SECRET})
+    req = Request(CALENDAR_SOURCE_URL, headers={**_HTTP_USER_AGENT, "x-calendar-secret": CALENDAR_SOURCE_SECRET})
     try:
         with urlopen(req, timeout=CALENDAR_FETCH_TIMEOUT_SECONDS) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
@@ -167,7 +172,7 @@ def _ha_get_state(entity_id: str):
         return None
     req = Request(
         f"{HA_URL}/api/states/{entity_id}",
-        headers={"Authorization": f"Bearer {HA_TOKEN}"},
+        headers={**_HTTP_USER_AGENT, "Authorization": f"Bearer {HA_TOKEN}"},
     )
     try:
         with urlopen(req, timeout=HA_FETCH_TIMEOUT_SECONDS) as resp:

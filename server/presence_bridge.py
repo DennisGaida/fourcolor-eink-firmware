@@ -76,7 +76,7 @@ logger = logging.getLogger("presence_bridge")
 
 _default_env_file = load_default_env_file(__file__)
 
-HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123")
+HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123").rstrip("/")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
 HA_CALL_SENSOR = os.environ.get("HA_CALL_SENSOR", "binary_sensor.teams_in_call")
 HA_WEBCAM_SENSOR = os.environ.get("HA_WEBCAM_SENSOR", "binary_sensor.webcam_active")
@@ -108,7 +108,12 @@ def classify_tier(title: str) -> str:
 
 
 def ha_get(path: str):
+    # Some reverse proxies (Cloudflare included) block urllib's default
+    # "Python-urllib/3.x" User-Agent outright (HTTP 403 with no useful
+    # body) — a plain browser-looking one avoids that without meaning
+    # anything else.
     req = Request(f"{HA_URL}{path}", headers={
+        "User-Agent": "Mozilla/5.0 (compatible; fourcolor-eink-firmware/presence_bridge)",
         "Authorization": f"Bearer {HA_TOKEN}",
         "Content-Type": "application/json",
     })
