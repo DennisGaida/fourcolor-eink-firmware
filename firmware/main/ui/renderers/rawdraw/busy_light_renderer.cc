@@ -73,17 +73,14 @@ struct EventLayout {
     int column;
 };
 
-// TODO(busy-light): flip to false once there's a reason to see the page at
-// real wall-clock time during dev sessions (calendar data itself now comes
-// from a real fetch — see presence_api_init in application.cc — this flag
-// is only about which time-of-day the page renders against).
-// The RTC syncs correctly, but real wall-clock time is rarely inside
-// business hours during a design/mocking session, which left the zoomed
-// detail view's window and now-marker with nothing interesting to show.
-// Pretending it's always mid-morning keeps the mock day's events centered
-// in view regardless of when you actually flash and look at the device.
-constexpr bool kMockCurrentTime = true;
-constexpr int kMockCurrentTimeMinutes = 10 * 60 + 30;  // 10:30am
+// The page now always renders against the real RTC/SNTP-synced wall-clock
+// time (calendar data itself has come from a real fetch since
+// presence_api_init in application.cc). This used to default to a fixed
+// 10:30am for dev/screenshot sessions where real time rarely fell inside
+// business hours — flip back to true temporarily if that's needed again,
+// but production builds must ship with this false.
+constexpr bool kMockCurrentTime = false;
+constexpr int kMockCurrentTimeMinutes = 10 * 60 + 30;  // 10:30am, only used if kMockCurrentTime is true
 
 // Returns local minutes-since-midnight, or -1 if RTC hasn't synced yet
 // (mirrors Clock::GetTimeString()'s year<2020 sanity check).
@@ -740,6 +737,25 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     calendar_tier = DebugTierToPresenceTier(debug_tier_);
     webcam_active = kDebugAvStates[debug_av_index_].cam;
     presenting = kDebugAvStates[debug_av_index_].presenting;
+    // Fabricate an "until"/"until next" event to match the debug word/tier
+    // above — without this, the real calendar (often empty at whatever the
+    // real current time happens to be) leaves the "MEETING" headline sitting
+    // above a "free all day" second line, which reads as a bug even though
+    // it's "working as designed". A fixed 30-minute span straddling "now"
+    // mirrors how a real event would be drawn: an end time while busy, a
+    // start time (30min out) while free.
+    PresenceEvent debug_event{};
+    debug_event.tier = calendar_tier;
+    constexpr int kDebugEventSpanMinutes = 30;
+    if (calendar_busy) {
+        debug_event.start_minutes = now_minutes - kDebugEventSpanMinutes;
+        debug_event.end_minutes = now_minutes + kDebugEventSpanMinutes;
+        real_active = &debug_event;
+    } else {
+        debug_event.start_minutes = now_minutes + kDebugEventSpanMinutes;
+        debug_event.end_minutes = debug_event.start_minutes + kDebugEventSpanMinutes;
+        real_active = nullptr;  // debug says free — never fall through to a real active event
+    }
 #endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
     const EffectiveStatus status = ComputeEffectiveStatus(
         calendar_busy, calendar_tier, current_.in_call, webcam_active, presenting);
@@ -838,6 +854,9 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
         until_line = buf;
     } else {
         const PresenceEvent* next = NextEvent(current_, now_minutes);
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        next = &debug_event;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
         if (next) {
             char buf[32];
             snprintf(buf, sizeof(buf), "%s %02d:%02d", i18n::Tr(i18n::StringId::kBusyLightUntilNext),
