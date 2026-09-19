@@ -498,7 +498,12 @@ extern const char* const kStringsZhCN[kStringCount] = {
     "客户",
     "可以进来",
     "演示中 — 请勿打扰",
-    "按键查看今日计划"
+    "按键查看今日计划",
+    "明天 ",
+    " 第一个会议",
+    "明天",
+    "没有会议",
+    ""
 };
 
 extern const char* const kStringsEnUS[kStringCount] = {
@@ -985,7 +990,12 @@ extern const char* const kStringsEnUS[kStringCount] = {
     "Customer",
     "come in",
     "Presenting — do not disturb",
-    "press for today's plan"
+    "press for today's plan",
+    "First meeting tomorrow at ",
+    "",
+    "",
+    "No meetings",
+    " tomorrow"
 };
 
 }  // namespace i18n

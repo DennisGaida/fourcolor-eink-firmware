@@ -482,5 +482,10 @@
   "busy_light_customer": "Customer",
   "busy_light_come_in": "come in",
   "busy_light_presenting_banner": "Presenting — do not disturb",
-  "busy_light_footer_hint": "press for today's plan"
+  "busy_light_footer_hint": "press for today's plan",
+  "busy_light_tomorrow_first_meeting_prefix": "First meeting tomorrow at ",
+  "busy_light_tomorrow_first_meeting_suffix": "",
+  "busy_light_tomorrow_no_meetings_prefix": "",
+  "busy_light_tomorrow_no_meetings_highlight": "No meetings",
+  "busy_light_tomorrow_no_meetings_suffix": " tomorrow"
 }

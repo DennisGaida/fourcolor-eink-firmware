@@ -342,6 +342,38 @@ void DrawCameraGlyph(uint8_t* fb, int width, int height, int x, int center_y, bo
     DrawTextBold(fb, width, x + kIconW + kGap, InkCenteredTextTopY(font, label, center_y, 0), label, font, color);
 }
 
+// Yellow-fill "highlight chip" behind bold black text, matching the
+// leadership-tier event fill and the presenting banner: yellow *text*
+// directly on the page background reads with too little contrast on e-ink
+// to be legible, so importance here is carried by the fill instead, same
+// as everywhere else in this renderer. Returns the chip's width so callers
+// can position further text after it. NOT MeasureTextHeight(font): that
+// reads font->line_height, which is 0 in this translation unit (same shim/
+// LVGL layout mismatch called out in DrawScaledText's comment above), and
+// a chip_h of ~4px renders as a thin strike-through line, not a box.
+// text_y is the caller's already-computed shared baseline (see the
+// "one shared y for both segments" comment at the call site) — NOT
+// recomputed here from `text`'s own ink bounds. Different strings have
+// slightly different ink bounds, so centering each chip on its own text
+// independently put boxed and plain segments on the same line a pixel or
+// two off each other's baseline, the same class of bug the shared-y
+// comment already exists to prevent.
+int DrawHighlightChip(uint8_t* fb, int width, int x, int center_y, int text_y, const char* text, const lv_font_t* font) {
+    if (!font || !text || !text[0]) return 0;
+    constexpr int kChipPadX = 4;
+    constexpr int kChipPadY = 3;
+    const TextInkBounds bounds = MeasureTextInkBounds(font, "Ag");
+    const int text_h = bounds.valid ? bounds.height : 12;
+    // +1 for DrawTextBold's double-strike offset, so the bold stroke's
+    // rightmost pixel doesn't land right on (or past) the chip's edge.
+    const int text_w = MeasureTextWidth(text, font) + 1;
+    const int chip_h = text_h + kChipPadY * 2;
+    Rect chip{x, center_y - chip_h / 2, text_w + kChipPadX * 2, chip_h};
+    DrawRect(fb, width, chip, YELLOW);
+    DrawTextBold(fb, width, x + kChipPadX, text_y, text, font, BLACK);
+    return chip.w;
+}
+
 }  // namespace
 
 BusyLightRenderer::BusyLightRenderer()
@@ -790,6 +822,61 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
         const int banner_text_w = MeasureTextWidth(banner_text, font_);
         DrawText(fb, width, banner.x + std::max(4, (banner.w - banner_text_w) / 2),
                  InkCenteredTextTopYInBox(font_, banner_text, banner.y, banner.h, 0), banner_text, font_, BLACK);
+    }
+
+    // Tomorrow's first meeting — end-of-workday context so a glance on the
+    // way out answers "what does tomorrow morning look like" without
+    // opening the detail face. Fixed slot directly above the footer,
+    // reserved whether or not it's actually drawn, so nothing else in the
+    // layout shifts depending on the time of day. Both branches share one
+    // prefix/highlight/suffix shape (rather than one being a special case)
+    // because which part reads naturally around the highlighted segment
+    // differs by language: English puts nothing before "No meetings" and
+    // "tomorrow" after; Chinese puts "明天" (tomorrow) first in both cases.
+    constexpr int kTomorrowLineH = 18;
+    constexpr int kEndOfWorkdayMinutes = 17 * 60;
+    if (now_minutes >= kEndOfWorkdayMinutes && current_.tomorrow_valid) {
+        // kSpacingXS clearance from the footer divider: with no gap, a
+        // descender (e.g. the "g" in "meeting") lands right on the divider
+        // line and reads as touching/clipped.
+        const int tomorrow_line_top = footer_top - Style::kSpacingXS - kTomorrowLineH;
+        const int tomorrow_center_y = tomorrow_line_top + kTomorrowLineH / 2;
+        // One shared y for every segment on this line, plain and boxed
+        // alike (mirrors the human-line comment above): ink-centering each
+        // piece independently — including inside the chip — would put them
+        // a pixel or two off each other's baseline.
+        const int tomorrow_y = InkCenteredTextTopY(font_, "Ag", tomorrow_center_y, 0);
+
+        std::string prefix, highlight, suffix;
+        if (current_.tomorrow_first_event_minutes >= 0) {
+            prefix = i18n::Tr(i18n::StringId::kBusyLightTomorrowFirstMeetingPrefix);
+            char time_buf[16];
+            snprintf(time_buf, sizeof(time_buf), "%02d:%02d",
+                     static_cast<int>(current_.tomorrow_first_event_minutes / 60),
+                     static_cast<int>(current_.tomorrow_first_event_minutes % 60));
+            highlight = time_buf;
+            suffix = i18n::Tr(i18n::StringId::kBusyLightTomorrowFirstMeetingSuffix);
+        } else {
+            prefix = i18n::Tr(i18n::StringId::kBusyLightTomorrowNoMeetingsPrefix);
+            highlight = i18n::Tr(i18n::StringId::kBusyLightTomorrowNoMeetingsHighlight);
+            suffix = i18n::Tr(i18n::StringId::kBusyLightTomorrowNoMeetingsSuffix);
+        }
+
+        // Plain (not bold) prefix/suffix: only the highlighted segment
+        // (the time, or "No meetings") should draw the eye, matching the
+        // chip's already-bold text — bolding everything flattened that
+        // contrast back out.
+        int seg_x = content_x0;
+        if (!prefix.empty()) {
+            DrawText(fb, width, seg_x, tomorrow_y, prefix.c_str(), font_, secondary);
+            seg_x += MeasureTextWidth(prefix.c_str(), font_);
+        }
+        // Chip, not plain yellow text: yellow text directly on the page
+        // background has too little contrast to read on e-ink.
+        seg_x += DrawHighlightChip(fb, width, seg_x, tomorrow_center_y, tomorrow_y, highlight.c_str(), font_);
+        if (!suffix.empty()) {
+            DrawText(fb, width, seg_x, tomorrow_y, suffix.c_str(), font_, secondary);
+        }
     }
 
     // Footer: hints that BOOT opens the detail face. Divider only spans the

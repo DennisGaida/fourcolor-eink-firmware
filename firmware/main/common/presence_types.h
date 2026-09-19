@@ -41,6 +41,8 @@ struct PresenceStatus {
     bool presenting = false;  // screen-sharing / do-not-disturb override
     int64_t last_updated_unix = 0;
     bool valid = false;  // false until first successful fetch
+    bool tomorrow_valid = false;  // true once a "days" entry matched tomorrow's date
+    int32_t tomorrow_first_event_minutes = -1;  // earliest event start tomorrow; -1 = no events
 };
 
 #endif  // PRESENCE_TYPES_H
