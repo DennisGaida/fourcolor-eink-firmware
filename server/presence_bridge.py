@@ -51,13 +51,12 @@ sensors) plus HA's calendar entity for today's and tomorrow's events. Swap
 Event titles are redacted to "Busy" here — do that redaction in this bridge,
 not in the firmware, so the real subject never has to leave your network.
 
-Usage:
-    HA_URL=http://homeassistant.local:8123 \\
-    HA_TOKEN=your_long_lived_access_token \\
-    HA_CALL_SENSOR=binary_sensor.teams_in_call \\
-    HA_WEBCAM_SENSOR=binary_sensor.webcam_active \\
-    HA_CALENDAR_ENTITY=calendar.your_calendar \\
-    python3 presence_bridge.py [--port 8080] [--redact-titles]
+Usage: copy server/.env.example to server/.env, fill in real values, then
+just run the script — it loads server/.env itself (no `source`/pip install
+needed). A real environment variable of the same name always wins over the
+file.
+
+    python3 presence_bridge.py [--port 8080] [--redact-titles] [--env-file path/to/.env]
 """
 
 import argparse
@@ -70,8 +69,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from env_file import load_default_env_file
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("presence_bridge")
+
+_default_env_file = load_default_env_file(__file__)
 
 HA_URL = os.environ.get("HA_URL", "http://homeassistant.local:8123")
 HA_TOKEN = os.environ.get("HA_TOKEN", "")
@@ -223,6 +226,8 @@ def main():
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--redact-titles", action="store_true",
                         help="Replace real event titles with 'Busy' before sending to the device")
+    parser.add_argument("--env-file", default=_default_env_file,
+                         help="Path to a KEY=VALUE .env file to load (already loaded by the time this runs)")
     args = parser.parse_args()
 
     if not HA_TOKEN:

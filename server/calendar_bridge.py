@@ -39,12 +39,12 @@ going on" defaults, so the firmware's HttpGet() succeeds and
 ParseCalendarJson()/ParseLiveJson() fall back to keeping last-known-good
 data (see firmware/main/common/presence_api.cc) rather than erroring loudly.
 
-Usage:
-    CALENDAR_SOURCE_URL=https://example.invalid/webhook/calendar \\
-    CALENDAR_SOURCE_SECRET=your_secret \\
-    HA_URL=https://ha.example.invalid \\
-    HA_TOKEN=your_long_lived_access_token \\
-    python3 calendar_bridge.py [--port 8080]
+Usage: copy server/.env.example to server/.env, fill in real values, then
+just run the script — it loads server/.env itself (no `source`/pip install
+needed). A real environment variable of the same name always wins over the
+file, so `FOO=bar python3 calendar_bridge.py` still overrides server/.env.
+
+    python3 calendar_bridge.py [--port 8080] [--env-file path/to/.env]
 """
 
 import argparse
@@ -57,8 +57,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
+from env_file import load_default_env_file
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("calendar_bridge")
+
+_default_env_file = load_default_env_file(__file__)
 
 CALENDAR_SOURCE_URL = os.environ.get("CALENDAR_SOURCE_URL", "")
 CALENDAR_SOURCE_SECRET = os.environ.get("CALENDAR_SOURCE_SECRET", "")
@@ -225,6 +229,8 @@ def make_handler():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--env-file", default=_default_env_file,
+                         help="Path to a KEY=VALUE .env file to load (already loaded by the time this runs)")
     args = parser.parse_args()
 
     if not CALENDAR_SOURCE_URL:
