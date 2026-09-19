@@ -88,22 +88,35 @@ Three independent implementations of the same contract, for three different purp
 
 | Script | Purpose |
 | --- | --- |
-| `server/mock_presence_server.py` | Pure mock — returns hardcoded data on every request, edited by hand to try scenarios. No real backend queried. This is what's actually been used for firmware dev so far, and what the firmware still points at (see below). |
+| `server/mock_presence_server.py` | Pure mock — returns hardcoded data on every request, edited by hand to try scenarios. No real backend queried. Used for firmware dev/testing; the generic Kconfig default (see below) points fresh checkouts at it. |
 | `server/calendar_bridge.py` | Real bridge for both endpoints. `/calendar/today` is backed by a calendar webhook — URL and an `x-calendar-secret` header value are read from the `CALENDAR_SOURCE_URL`/`CALENDAR_SOURCE_SECRET` environment variables (never hardcoded, never logged, never committed). Deliberately source-agnostic: it only knows the webhook returns JSON already shaped like this contract, not what tool sits behind it. The upstream response is validated/rebuilt field-by-field rather than blindly proxied. `/live` is backed by Home Assistant: `isInCall`/`isWebcamActive` come from binary sensors (`HA_CALL_SENSOR`/`HA_WEBCAM_SENSOR`), `isPresenting` from comparing a text sensor's state (`HA_TEAMS_STATUS_SENSOR`) against `HA_PRESENTING_STATES`. All four entity IDs are configurable env vars since they depend on whatever publishes them into HA. Falls back to the "nothing going on" defaults if `HA_URL`/`HA_TOKEN` aren't set. |
 | `server/presence_bridge.py` | Alternate all-HA sketch: same two binary sensors for call/webcam state as `calendar_bridge.py`, but also sources `/calendar/today` from HA's calendar API instead of a webhook. `tier` is derived from keyword lists matched against the event title (`HA_CUSTOMER_KEYWORDS`, `HA_LEADERSHIP_KEYWORDS`, `HA_SOLO_KEYWORDS`) since HA doesn't expose anything closer to "how important is this meeting" or attendee counts. Never deployed against a real HA instance as part of this project — treat it as a starting point, not a finished bridge. Superseded by `calendar_bridge.py` for setups that already have a calendar webhook. |
 
-The firmware (`kPresenceBridgeEndpoint` in `firmware/main/application.cc`) is currently pointed at `mock_presence_server.py`, not `calendar_bridge.py` — the switch to real calendar data is a deliberate later step, made once the tomorrow-footer line (see above) has been through a mocked dev/test pass.
+The firmware's bridge endpoint (`kPresenceBridgeEndpoint` in `firmware/main/application.cc`) is no longer a hardcoded constant — it's read from `CONFIG_PRESENCE_BRIDGE_ENDPOINT` (Kconfig menu "Deployment defaults" > "Presence/calendar bridge base URL", see `firmware/main/Kconfig.projbuild`). `sdkconfig` is gitignored, so each checkout/dev machine bakes in its own real value at build time; `sdkconfig.defaults.esp32s3` only carries a safe generic default (`http://192.168.178.37:8080`, i.e. `mock_presence_server.py` on a typical dev LAN) for fresh checkouts. The production device is built against `https://busylight.int.gaida.biz`, running `calendar_bridge.py` — a real DNS hostname works fine here since `esp_http_client` resolves it via the normal DNS resolver (this only needs to be a plain LAN IP if no public/LAN DNS entry exists for it; `.local`/mDNS names are the one thing that won't resolve, since no mDNS component is wired into this firmware).
 
-Run the mock server:
+Run the mock server for local dev:
 
 ```bash
 python3 server/mock_presence_server.py --port 8080
 ```
 
-Point the firmware at it via `presence_api_set_endpoint()`, or by editing `kPresenceBridgeEndpoint` in `firmware/main/application.cc` (must be a plain LAN IP — no mDNS component is wired into this firmware).
+Point a dev build at it by setting `CONFIG_PRESENCE_BRIDGE_ENDPOINT` via `idf.py menuconfig` (or editing `sdkconfig` directly), or at runtime via `presence_api_set_endpoint()`.
+
+## Detail-face UP/DOWN scroll (built)
+
+UP/DOWN on the detail face scroll the zoomed day-grid window an hour at a time, clamped to the day's 8:00-18:00 bounds; a press that's already at the clamp signals a no-op with a rapid double-blink on the onboard LED (`Board::FlashErrorLed()`) instead of the usual single activity-pulse blink. Resets to auto-centered-on-now whenever the view is toggled. On the default face (or everywhere, when `CONFIG_BUSY_LIGHT_DEBUG_CYCLE` is off), UP/DOWN remain a no-op.
+
+## Screenshots
+
+Captured on-device (4-color e-ink panel), default face unless noted otherwise.
+
+| | |
+| --- | --- |
+| ![Free, tomorrow footer](images/busy-light/01-free-tomorrow.png) **Free, tomorrow footer** — idle/cam-off state after 17:00, showing the "First meeting tomorrow at 09:30" line above the footer hint. | ![Busy](images/busy-light/02-busy.png) **Busy** — internal-tier meeting in progress, "until HH:MM" line reflecting the active event. |
+| ![Busy, presenting](images/busy-light/03-busy-presenting.png) **Busy + presenting** — same as above with screen-share/do-not-disturb active, adding the "Presenting — do not disturb" banner. | ![Detail face](images/busy-light/04-detail.png) **Detail face** — zoomed day grid, header strip in sync with the current AV/tier state. |
+| ![Busy, customer tier](images/busy-light/05-busy-customer-real.png) **Busy, customer tier** — real (non-debug) calendar data, red band + presenting banner for a customer-tier meeting. | ![Detail face, colorful](images/busy-light/06-detail-colorful.png) **Detail face, colorful** — day grid showing a solid-red customer-tier block and a yellow-rule leadership-tier block. |
 
 ## Not yet built
 
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
 - The device-side HTTP response buffer is fixed at 8KB (`firmware/main/common/presence_api.cc`) — sized for a busy single day with long titles, not for a third `days` entry or an unusually large participant list.
-- UP/DOWN on the detail face scroll the zoomed day-grid window an hour at a time, clamped to the day's 8:00-18:00 bounds; a press that's already at the clamp signals a no-op with a rapid double-blink on the onboard LED (`Board::FlashErrorLed()`) instead of the usual single activity-pulse blink. Resets to auto-centered-on-now whenever the view is toggled. On the default face (or everywhere, when `CONFIG_BUSY_LIGHT_DEBUG_CYCLE` is off), UP/DOWN remain a no-op.
