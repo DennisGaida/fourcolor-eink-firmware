@@ -83,6 +83,7 @@ int MinutesToY(int minutes, int window_start, int window_end, int grid_top, int 
     return grid_top + (clamped - window_start) * grid_h / (window_end - window_start);
 }
 
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
 // Debug/demo cycle for the DOWN button — see BusyLightRenderer::HandleInput.
 // Some entries are intentionally redundant (e.g. "cam off" and "presentation
 // off" both land on cam=false/presenting=false) because the point is to step
@@ -114,15 +115,18 @@ PresenceEventTier DebugTierToPresenceTier(BusyLightRenderer::DebugTier tier) {
 bool DebugTierIsBusy(BusyLightRenderer::DebugTier tier) {
     return tier != BusyLightRenderer::DebugTier::kFree;
 }
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
 
 // Whether this tier is important enough to color the top status band red.
 bool IsElevated(PresenceEventTier tier) {
     return tier != PresenceEventTier::kInternal && tier != PresenceEventTier::kSolo;
 }
 
-// Effective header status after folding in the debug override. Shared by
-// both faces' headers so "ad-hoc call" (free but camera/presenting active —
-// see the design doc's own `adhoc` rule) is computed identically everywhere.
+// Effective header status, folding the real calendar's active event together
+// with live call/webcam/presenting state. Shared by both faces' headers so
+// "ad-hoc call" (nothing on the calendar, but a call/camera/screen-share is
+// live — see the design doc's own `adhoc` rule) is computed identically
+// everywhere.
 struct EffectiveStatus {
     bool busy;
     PresenceEventTier tier;   // meaningful only if busy
@@ -130,16 +134,17 @@ struct EffectiveStatus {
     bool is_adhoc;
 };
 
-EffectiveStatus ComputeEffectiveStatus(BusyLightRenderer::DebugTier debug_tier, bool cam, bool presenting) {
+EffectiveStatus ComputeEffectiveStatus(bool calendar_busy, PresenceEventTier calendar_tier,
+                                        bool in_call, bool webcam_active, bool presenting) {
     EffectiveStatus s;
-    const bool base_busy = DebugTierIsBusy(debug_tier);
-    // Ad-hoc call: nothing on the calendar, but the camera or a screen-share
-    // is live — the design doc treats that as a customer-severity call
+    // Ad-hoc call: nothing on the calendar, but a call/camera/screen-share is
+    // live — the design doc treats that as a customer-severity call
     // ("Ad-hoc call", never silently reads as FREE) rather than pretending
-    // nobody's in the room.
-    s.is_adhoc = !base_busy && (cam || presenting);
-    s.busy = base_busy || s.is_adhoc;
-    s.tier = s.is_adhoc ? PresenceEventTier::kCustomer : DebugTierToPresenceTier(debug_tier);
+    // nobody's in the room. in_call counts here even though it has no
+    // dedicated glyph of its own (that's webcam_active's job below).
+    s.is_adhoc = !calendar_busy && (in_call || webcam_active || presenting);
+    s.busy = calendar_busy || s.is_adhoc;
+    s.tier = s.is_adhoc ? PresenceEventTier::kCustomer : calendar_tier;
     s.band_elevated = presenting || (s.busy && IsElevated(s.tier));
     return s;
 }
@@ -446,9 +451,19 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
         window_end = window_start + kZoomSpanMinutes;
     }
 
-    const bool eff_cam = kDebugAvStates[debug_av_index_].cam;
-    const bool eff_presenting = kDebugAvStates[debug_av_index_].presenting;
-    const EffectiveStatus status = ComputeEffectiveStatus(debug_tier_, eff_cam, eff_presenting);
+    const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
+    bool calendar_busy = real_active != nullptr;
+    PresenceEventTier calendar_tier = real_active ? real_active->tier : PresenceEventTier::kInternal;
+    bool webcam_active = current_.webcam_active;
+    bool presenting = current_.presenting;
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    calendar_busy = DebugTierIsBusy(debug_tier_);
+    calendar_tier = DebugTierToPresenceTier(debug_tier_);
+    webcam_active = kDebugAvStates[debug_av_index_].cam;
+    presenting = kDebugAvStates[debug_av_index_].presenting;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    const EffectiveStatus status = ComputeEffectiveStatus(
+        calendar_busy, calendar_tier, current_.in_call, webcam_active, presenting);
     const bool busy_now = status.busy;
 
     // Single-line header: a tier swatch, the headline word, and the camera
@@ -464,9 +479,9 @@ void BusyLightRenderer::RenderDetailFace(uint8_t* fb, int width, int height) {
     DrawText(fb, width, word_x, InkCenteredTextTopYInBox(title_font_, word, kHeaderTop, kHeaderHeight, 0),
              word, title_font_, BLACK);
 
-    const int cam_w = CameraGlyphWidth(eff_cam, font_);
+    const int cam_w = CameraGlyphWidth(webcam_active, font_);
     DrawCameraGlyph(fb, width, height, width - Style::kSpacingLG - cam_w, kHeaderTop + kHeaderHeight / 2,
-                    eff_cam, font_, BLACK);
+                    webcam_active, font_, BLACK);
 
     // Heavy rule under the header, matching the design's app-bar/grid split.
     DrawHLine(fb, width, kGridTop - 1, 0, width - 1, border);
@@ -644,14 +659,19 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     const Color border = theme.ColorFor(ThemeToken::Border);
 
     const int now_minutes = CurrentLocalMinutes();
-    // "until" and the rail always reflect the real calendar; only the
-    // word/band/human-line/camera/presenting below are driven by the
-    // debug override (UP/DOWN), so the debug cycle never has to fake a
-    // fictitious end time or corrupt the actual day shape.
     const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
-    const bool eff_cam = kDebugAvStates[debug_av_index_].cam;
-    const bool eff_presenting = kDebugAvStates[debug_av_index_].presenting;
-    const EffectiveStatus status = ComputeEffectiveStatus(debug_tier_, eff_cam, eff_presenting);
+    bool calendar_busy = real_active != nullptr;
+    PresenceEventTier calendar_tier = real_active ? real_active->tier : PresenceEventTier::kInternal;
+    bool webcam_active = current_.webcam_active;
+    bool presenting = current_.presenting;
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    calendar_busy = DebugTierIsBusy(debug_tier_);
+    calendar_tier = DebugTierToPresenceTier(debug_tier_);
+    webcam_active = kDebugAvStates[debug_av_index_].cam;
+    presenting = kDebugAvStates[debug_av_index_].presenting;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    const EffectiveStatus status = ComputeEffectiveStatus(
+        calendar_busy, calendar_tier, current_.in_call, webcam_active, presenting);
     const bool busy_now = status.busy;
 
     // Top status band: red whenever the room is elevated (leadership,
@@ -762,9 +782,9 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     // Camera badge lines up with "until", not the human line below: matching
     // font sizes (both small/secondary-weight) put it on a coherent visual
     // line, where next to the big bold human-line text it looked mismatched.
-    const int cam_w = CameraGlyphWidth(eff_cam, font_);
+    const int cam_w = CameraGlyphWidth(webcam_active, font_);
     DrawCameraGlyph(fb, width, height, content_right - Style::kSpacingSM - cam_w, until_center_y,
-                    eff_cam, font_, secondary);
+                    webcam_active, font_, secondary);
     y += kLineBoxH + Style::kSpacingSM;
 
     // Human line — the tier-carrying segment (e.g. "important") is colored
@@ -811,9 +831,9 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     DrawTextBold(fb, width, seg_x, human_y, seg_b.c_str(), title_font_, seg_b_color);
     y += kLineBoxH + Style::kSpacingMD;
 
-    // "Presenting" banner: demo-only signal (no real screen-share sensor
-    // wired up yet) shown whenever the effective presenting state is set.
-    if (eff_presenting) {
+    // "Presenting" banner, shown whenever the screen-share/do-not-disturb
+    // signal is set (real, from /live — or the debug override, if enabled).
+    if (presenting) {
         constexpr int kBannerH = 22;
         Rect banner{content_x0, y, content_right - content_x0, kBannerH};
         DrawRect(fb, width, banner, YELLOW);
@@ -903,11 +923,12 @@ bool BusyLightRenderer::HandleInput(const ButtonEvent& event) {
             view_ = (view_ == View::kDefault) ? View::kDetail : View::kDefault;
             needs_full_refresh_ = true;
             return true;
-        // Debug/demo cycles — neither button did anything on this page
-        // before. UP steps through the four status tiers, DOWN through the
-        // camera/presenting combinations; both only affect the header (word,
-        // swatch, band, human line, camera, presenting banner), never the
-        // real calendar underneath.
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        // Debug/demo cycles, only compiled in when CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+        // is set (see Kconfig.projbuild). UP steps through the four status
+        // tiers, DOWN through the camera/presenting combinations; both only
+        // affect the header (word, swatch, band, human line, camera,
+        // presenting banner), never the real calendar underneath.
         case ButtonEvent::kUpClick:
             debug_tier_ = static_cast<DebugTier>((static_cast<int>(debug_tier_) + 1) % 4);
             needs_full_refresh_ = true;
@@ -916,6 +937,7 @@ bool BusyLightRenderer::HandleInput(const ButtonEvent& event) {
             debug_av_index_ = (debug_av_index_ + 1) % kDebugAvStateCount;
             needs_full_refresh_ = true;
             return true;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
         case ButtonEvent::kUpLongPress:
         case ButtonEvent::kDownLongPress:
         case ButtonEvent::kBootLongPress:

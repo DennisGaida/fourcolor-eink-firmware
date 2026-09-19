@@ -27,15 +27,18 @@ public:
         kDetail,
     };
 
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
     // Debug/demo status override for the header (word/swatch/band/human
-    // line) — cycled by UP click. Independent of the real calendar so you
-    // can preview every tier without editing mock data.
+    // line) — cycled by UP click, gated behind CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    // (see Kconfig.projbuild) since it overrides the real calendar/presence
+    // data and has no business being on in a real deployment.
     enum class DebugTier {
         kFree,
         kInternal,
         kLeadership,
         kCustomer,
     };
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
 
     BusyLightRenderer();
     ~BusyLightRenderer() override;
@@ -54,8 +57,10 @@ private:
 
     PresenceStatus current_;
     View view_ = View::kDefault;
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
     DebugTier debug_tier_ = DebugTier::kFree;
     int debug_av_index_ = 0;  // index into kDebugAvStates (cam/presenting demo cycle)
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
     const lv_font_t* font_ = nullptr;
     const lv_font_t* title_font_ = nullptr;
 };
