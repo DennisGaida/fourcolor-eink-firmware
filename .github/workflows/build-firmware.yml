@@ -22,6 +22,75 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need full history + tags to diff conventional commits
+
+      # firmware/CMakeLists.txt has no hand-maintained version constant: it
+      # derives PROJECT_VER from `git describe --tags --match "v[0-9]*"` at
+      # configure time. On a plain branch push (not a tag build) we compute
+      # the next semver from Conventional Commits touching firmware/ since
+      # the last vX.Y.Z tag -
+      #   feat: ...              -> minor bump
+      #   fix: / perf: ...       -> patch bump
+      #   `type!:` or a
+      #   "BREAKING CHANGE:" footer -> major bump
+      # Commits of any other type (docs/chore/refactor/test/ci/build/style)
+      # don't move the version. If warranted, we tag now (before building) so
+      # PROJECT_VER resolves to a clean "X.Y.Z" instead of a
+      # "X.Y.Z-N-gHASH" dev suffix. Mirrors the same approach already used
+      # for the bridge image in build-bridge.yml, restricted to firmware/
+      # instead of server/ and using an unprefixed "v" tag namespace.
+      - name: Compute next version from Conventional Commits
+        id: version
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          set -euo pipefail
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          LAST_TAG=$(git tag --list "v[0-9]*" --sort=-v:refname | head -n1 || true)
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "No previous vX.Y.Z tag found - bootstrapping at 0.1.0"
+            NEW_VERSION="0.1.0"
+            BUMP="initial"
+          else
+            LAST_VERSION="${LAST_TAG#v}"
+            echo "Last published version: $LAST_VERSION (tag $LAST_TAG)"
+
+            # 0=none 1=patch 2=minor 3=major
+            BUMP_LEVEL=0
+            COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%H' -- firmware/)
+            for sha in $COMMITS; do
+              MSG=$(git log -1 --format='%B' "$sha")
+              if echo "$MSG" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' || echo "$MSG" | grep -q 'BREAKING CHANGE:'; then
+                BUMP_LEVEL=3
+              elif echo "$MSG" | grep -qE '^feat(\([^)]*\))?:' && [ "$BUMP_LEVEL" -lt 2 ]; then
+                BUMP_LEVEL=2
+              elif echo "$MSG" | grep -qE '^(fix|perf)(\([^)]*\))?:' && [ "$BUMP_LEVEL" -lt 1 ]; then
+                BUMP_LEVEL=1
+              fi
+            done
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_VERSION"
+            case "$BUMP_LEVEL" in
+              3) NEW_VERSION="$((MAJOR + 1)).0.0"; BUMP="major" ;;
+              2) NEW_VERSION="${MAJOR}.$((MINOR + 1)).0"; BUMP="minor" ;;
+              1) NEW_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"; BUMP="patch" ;;
+              *) NEW_VERSION="$LAST_VERSION"; BUMP="none" ;;
+            esac
+          fi
+
+          echo "Bump: $BUMP -> version $NEW_VERSION"
+          echo "value=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEW_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag new version
+        if: github.event_name == 'push' && steps.version.outputs.bump != '' && steps.version.outputs.bump != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "firmware ${{ steps.version.outputs.value }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Build firmware
         run: |
@@ -30,10 +99,25 @@ jobs:
           idf.py build
           idf.py merge-bin
 
+      - name: Determine release tag
+        id: release_tag
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'push' && steps.version.outputs.bump != '' && steps.version.outputs.bump != 'none')
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ steps.version.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Determine artifact name
         id: meta
         run: |
-          VERSION=$(grep 'set(PROJECT_VER' CMakeLists.txt | sed -E 's/.*"([^"]+)".*/\1/')
+          if [ -n "${{ steps.release_tag.outputs.tag }}" ]; then
+            VERSION="${{ steps.release_tag.outputs.tag }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION=$(git describe --tags --always --dirty --match "v[0-9]*" | sed 's/^v//')
+          fi
           BOARD="zectrix-s3-epaper-4.2"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "asset_name=${BOARD}-v${VERSION}.bin" >> "$GITHUB_OUTPUT"
@@ -46,13 +130,18 @@ jobs:
           if-no-files-found: error
 
       - name: Rename binary for release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.release_tag.outputs.tag != ''
         run: cp build/merged-binary.bin "${{ steps.meta.outputs.asset_name }}"
 
+      # generate_release_notes builds the release body from merged PRs/commits
+      # since the previous release automatically - no hand-written changelog
+      # to maintain.
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: steps.release_tag.outputs.tag != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          generate_release_notes: true
           files: firmware/${{ steps.meta.outputs.asset_name }}
           fail_on_unmatched_files: true
         env:

@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import subprocess
 import zipfile
 import argparse
 from pathlib import Path
@@ -30,12 +31,20 @@ def get_board_type_from_compile_commands() -> Optional[str]:
 
 
 def get_project_version() -> Optional[str]:
-    """Read set(PROJECT_VER "x.y.z") from root CMakeLists.txt"""
-    with Path("CMakeLists.txt").open() as f:
-        for line in f:
-            if line.startswith("set(PROJECT_VER"):
-                return line.split("\"")[1]
-    return None
+    """Derive the project version the same way CMakeLists.txt does:
+    `git describe --tags --match "v[0-9]*"`, restricted to firmware release
+    tags so it can't resolve to an unrelated bridge-vX.Y.Z tag (see
+    .github/workflows/build-bridge.yml). No version constant is hand
+    -maintained in CMakeLists.txt.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "describe", "--tags", "--always", "--dirty", "--match", "v[0-9]*"],
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        return out[1:] if out.startswith("v") else out
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
 
 
 def merge_bin() -> None:
