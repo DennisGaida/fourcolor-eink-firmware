@@ -41,6 +41,20 @@ namespace ui {
 
 namespace {
 
+// Maps the Kconfig-selected default module (CONFIG_DEFAULT_UI_MODULE_*) to
+// its RawDrawPageId, used only for the very first page shown at boot.
+RawDrawPageId DefaultUiModulePage() {
+#if defined(CONFIG_DEFAULT_UI_MODULE_WEATHER) && CONFIG_DEFAULT_UI_MODULE_WEATHER
+    return RawDrawPageId::Weather;
+#elif defined(CONFIG_DEFAULT_UI_MODULE_GALLERY) && CONFIG_DEFAULT_UI_MODULE_GALLERY
+    return RawDrawPageId::Gallery;
+#elif defined(CONFIG_DEFAULT_UI_MODULE_SETTINGS) && CONFIG_DEFAULT_UI_MODULE_SETTINGS
+    return RawDrawPageId::Settings;
+#else
+    return RawDrawPageId::BusyLight;
+#endif
+}
+
 std::string FitTextToWidth(const std::string& text, const lv_font_t* font, int max_width) {
     if (!font || max_width <= 0 || text.empty()) return "";
     if (rawdraw::MeasureTextWidth(text.c_str(), font) <= max_width) return text;
@@ -205,7 +219,6 @@ const char* RawDrawUiManager::GetPageTitle(RawDrawPageId page) {
         case RawDrawPageId::Settings: return Tr(StringId::kSettings);
         case RawDrawPageId::Gallery:  return Tr(StringId::kGallery);
         case RawDrawPageId::Weather:  return Tr(StringId::kWeather);
-        case RawDrawPageId::WeatherDetail: return Tr(StringId::kWeatherDetail);
         case RawDrawPageId::PhotoDetail: return Tr(StringId::kPhotoDetail);
         case RawDrawPageId::FontDebug:  return Tr(StringId::kAlignmentTest);
         case RawDrawPageId::FontMetrics: return Tr(StringId::kFontMetrics);
@@ -223,7 +236,7 @@ RawDrawUiManager::RawDrawUiManager()
     : lcd_(nullptr)
     , width_(Style::kScreenWidth)
     , height_(Style::kScreenHeight)
-    , current_page_(RawDrawPageId::BusyLight)
+    , current_page_(DefaultUiModulePage())
     , refresh_cb_(nullptr)
     , full_refresh_pending_(false)
     , clock_(rawdraw::kClockX, rawdraw::kClockY, &font_zectrix_16_1)
@@ -236,7 +249,6 @@ RawDrawUiManager::RawDrawUiManager()
     photo_detail_renderer_ = std::make_unique<rawdraw::PhotoDetailRenderer>();
     weather_renderer_ = std::make_unique<rawdraw::WeatherRenderer>();
     busy_light_renderer_ = std::make_unique<rawdraw::BusyLightRenderer>();
-    weather_detail_renderer_ = std::make_unique<rawdraw::WeatherDetailRenderer>();
     font_debug_renderer_ = std::make_unique<rawdraw::FontDebugRenderer>();
     font_metrics_renderer_ = std::make_unique<rawdraw::FontMetricsRenderer>();
     ap_transfer_renderer_ = std::make_unique<rawdraw::ApTransferRenderer>();
@@ -568,7 +580,6 @@ rawdraw::PageRenderer* RawDrawUiManager::GetRendererForPage(RawDrawPageId page) 
         case RawDrawPageId::Settings: return settings_renderer_.get();
         case RawDrawPageId::Gallery:  return photo_gallery_renderer_.get();
         case RawDrawPageId::Weather:  return weather_renderer_.get();
-        case RawDrawPageId::WeatherDetail: return weather_detail_renderer_.get();
         case RawDrawPageId::PhotoDetail: return photo_detail_renderer_.get();
         case RawDrawPageId::FontDebug:  return font_debug_renderer_.get();
         case RawDrawPageId::FontMetrics: return font_metrics_renderer_.get();
@@ -664,9 +675,10 @@ bool RawDrawUiManager::TryDisplayCurrentPhotoRaw4Color() {
     return shown;
 }
 
-const std::array<RawDrawUiManager::QuickSwitchItem, 3>& RawDrawUiManager::GetQuickSwitchItems() {
-    static const std::array<QuickSwitchItem, 3> kItems = {{
+const std::array<RawDrawUiManager::QuickSwitchItem, 4>& RawDrawUiManager::GetQuickSwitchItems() {
+    static const std::array<QuickSwitchItem, 4> kItems = {{
         {RawDrawPageId::BusyLight, FA_SETTINGS_CLOCK},
+        {RawDrawPageId::Weather, nullptr},
         {RawDrawPageId::Gallery, FA_SETTINGS_IMAGE},
         {RawDrawPageId::Settings, FA_SETTINGS_GEAR},
 #if 0
@@ -753,18 +765,6 @@ bool RawDrawUiManager::HandleInput(const rawdraw::ButtonEvent& event) {
     }
     
     if (event.type == rawdraw::ButtonEvent::kBootDoubleClick) {
-#if 0
-        // Disabled during hardware screenshot verification. BOOT double-click
-        // is globally reserved for debug screenshot capture.
-        if (current_page_ == RawDrawPageId::Weather) {
-            SwitchPage(RawDrawPageId::WeatherDetail);
-            return true;
-        }
-        if (current_page_ == RawDrawPageId::WeatherDetail) {
-            SwitchPage(RawDrawPageId::Weather);
-            return true;
-        }
-#endif
 #if 0
         // Disabled for now: BOOT double-click must remain global screenshot on
         // gallery so real hardware captures can report the memory-card layout.
@@ -1610,6 +1610,20 @@ void RawDrawUiManager::UpdatePresenceStatus(const PresenceStatus& status) {
 PresenceStatus RawDrawUiManager::GetPresenceStatus() const {
     const PresenceStatus* last = presence_api_get_last_data();
     return last ? *last : PresenceStatus{};
+}
+
+// ============================================================
+// Weather page data updates
+// ============================================================
+
+void RawDrawUiManager::UpdateWeatherData(const WeatherData& data) {
+    if (!weather_renderer_) return;
+
+    weather_renderer_->Update(data);
+
+    if (current_page_ == RawDrawPageId::Weather) {
+        RefreshActivePage(false);
+    }
 }
 
 void RawDrawUiManager::SetWifiBlinking(bool blinking) {

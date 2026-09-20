@@ -26,18 +26,14 @@ public:
     bool HandleInput(const ButtonEvent& event) override;
 
     // Data interface
+    // Pushes freshly fetched data into the renderer (see weather_api.h).
     void Update(const WeatherData& data);
-    void SetCityName(const char* name);
-    void SetFirmwareVersion(const char* version);
 
 private:
     WeatherData current_data_;
-    std::string city_name_;
-    std::string firmware_version_;
-    bool has_data_;
-    int page_index_ = 0;  // Selected forecast day index
-    const lv_font_t* font_ = nullptr;
-    const lv_font_t* title_font_ = nullptr;
+    bool has_data_ = false;
+    const lv_font_t* font_ = nullptr;        // SourceHanSansSC_Regular_slim (16px)
+    const lv_font_t* title_font_ = nullptr;  // SourceHanSansSC_Medium_slim (24px)
 };
 
 }  // namespace rawdraw

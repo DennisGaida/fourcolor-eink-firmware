@@ -19,7 +19,6 @@
 #include "ui/renderers/rawdraw/photo_detail_renderer.h"
 #include "ui/renderers/rawdraw/weather_renderer.h"
 #include "ui/renderers/rawdraw/busy_light_renderer.h"
-#include "ui/renderers/rawdraw/weather_detail_renderer.h"
 #include "ui/renderers/rawdraw/font_debug_renderer.h"
 #include "ui/renderers/rawdraw/font_metrics_renderer.h"
 #include "ui/renderers/rawdraw/ap_transfer_renderer.h"
@@ -57,7 +56,6 @@ enum class RawDrawPageId {
     Settings = 4,
     Gallery = 5,
     Weather = 6,
-    WeatherDetail = 8,
     PhotoDetail = 9,
     FontDebug = 15,
     FontMetrics = 16,
@@ -265,6 +263,11 @@ public:
     void UpdatePresenceStatus(const PresenceStatus& status);
 
     /**
+     * @brief Push freshly fetched weather data into the Weather page renderer
+     */
+    void UpdateWeatherData(const WeatherData& data);
+
+    /**
      * @brief Get busy-light presence status
      */
     PresenceStatus GetPresenceStatus() const;
@@ -279,7 +282,6 @@ public:
     rawdraw::PhotoDetailRenderer* GetPhotoDetailRenderer() { return photo_detail_renderer_.get(); }
     rawdraw::WeatherRenderer* GetWeatherRenderer() { return weather_renderer_.get(); }
     rawdraw::BusyLightRenderer* GetBusyLightRenderer() { return busy_light_renderer_.get(); }
-    rawdraw::WeatherDetailRenderer* GetWeatherDetailRenderer() { return weather_detail_renderer_.get(); }
     rawdraw::FontDebugRenderer* GetFontDebugRenderer() { return font_debug_renderer_.get(); }
     rawdraw::FontMetricsRenderer* GetFontMetricsRenderer() { return font_metrics_renderer_.get(); }
     rawdraw::ApTransferRenderer* GetApTransferRenderer() { return ap_transfer_renderer_.get(); }
@@ -386,7 +388,6 @@ private:
     std::unique_ptr<rawdraw::PhotoDetailRenderer> photo_detail_renderer_;
     std::unique_ptr<rawdraw::WeatherRenderer> weather_renderer_;
     std::unique_ptr<rawdraw::BusyLightRenderer> busy_light_renderer_;
-    std::unique_ptr<rawdraw::WeatherDetailRenderer> weather_detail_renderer_;
     std::unique_ptr<rawdraw::FontDebugRenderer> font_debug_renderer_;
     std::unique_ptr<rawdraw::FontMetricsRenderer> font_metrics_renderer_;
     std::unique_ptr<rawdraw::ApTransferRenderer> ap_transfer_renderer_;
@@ -442,7 +443,7 @@ private:
     void RestoreQuickSwitchBacking(uint8_t* fb);
     void RedrawQuickSwitchOnly(uint8_t* fb);
     void RefreshRect(const rawdraw::Rect& rect, bool urgent = false);
-    static const std::array<QuickSwitchItem, 3>& GetQuickSwitchItems();
+    static const std::array<QuickSwitchItem, 4>& GetQuickSwitchItems();
     void MarkAllRenderersFullRefresh();
 };
 

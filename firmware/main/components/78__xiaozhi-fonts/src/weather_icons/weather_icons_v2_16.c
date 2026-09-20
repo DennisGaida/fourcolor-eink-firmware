@@ -1,0 +1,138 @@
+/*******************************************************************************
+ * Size: 16 px
+ * Bpp: 1
+ * Source: Phosphor Icons (duotone), hand-converted via Inkscape + Pillow
+ ******************************************************************************/
+
+#ifdef LV_LVGL_H_INCLUDE_SIMPLE
+#include "lvgl.h"
+#else
+#include "lvgl.h"
+#endif
+
+#ifndef WEATHER_ICONS_V2_16
+#define WEATHER_ICONS_V2_16 1
+#endif
+
+#if WEATHER_ICONS_V2_16
+
+/*-----------------
+ *    BITMAPS
+ *----------------*/
+
+static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
+    0x18, 0x7e, 0x7e, 0xff, 0xff, 0x7e, 0x7e, 0x18,
+    0x1, 0x80, 0x1, 0x80, 0x31, 0x8c, 0x38, 0x1c,
+    0x1f, 0xd8, 0x6, 0x60, 0xc, 0x30, 0xe8, 0x17,
+    0xe8, 0x17, 0xc, 0x30, 0x6, 0x60, 0x1b, 0xd8,
+    0x38, 0x1c, 0x31, 0x8c, 0x1, 0x80, 0x1, 0x80,
+    0x33, 0xff, 0xfc, 0xf3, 0x0, 0x8, 0x0, 0x64,
+    0x5, 0xf0, 0x1c, 0xf8, 0x63, 0xfb, 0x98, 0x7f,
+    0xc0, 0xcf, 0x1, 0x6c, 0x5, 0x0, 0x36, 0x0,
+    0xdc, 0xe, 0x3f, 0xf0, 0x0, 0xf0, 0x3, 0xfc,
+    0x7, 0xe, 0x1e, 0x6, 0x7c, 0x3, 0x6c, 0x3,
+    0xcc, 0x3, 0xc0, 0x3, 0xc0, 0x6, 0x60, 0xe,
+    0x7f, 0xfc, 0x1f, 0xf0, 0x1, 0xe0, 0x1f, 0xc0,
+    0xe1, 0x8f, 0x3, 0x7c, 0xf, 0x20, 0x3c, 0x0,
+    0xf0, 0x6, 0x60, 0x79, 0xff, 0xc0, 0x0, 0x7,
+    0xb8, 0x0, 0x0, 0x1f, 0x0, 0x7, 0x80, 0x7f,
+    0x83, 0xff, 0x1f, 0xfe, 0xff, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0x3, 0x0, 0xc, 0x0, 0x30,
+    0x0, 0xd8, 0x3, 0xe0, 0x7, 0x0, 0x3, 0xf0,
+    0x1d, 0xe0, 0xc1, 0x9f, 0x3, 0x68, 0xf, 0x0,
+    0x3c, 0x1, 0xf0, 0xe, 0x7f, 0xf0, 0xff, 0x80,
+    0x68, 0x3, 0x60, 0xf, 0x80, 0xc, 0x0, 0x20,
+    0x0, 0x3, 0xf0, 0x1d, 0xe0, 0xc1, 0x9f, 0x3,
+    0x68, 0xf, 0x0, 0x3c, 0x1, 0xf0, 0xe, 0x7f,
+    0xf0, 0xff, 0x81, 0x8c, 0x7, 0xb0, 0x6, 0x0,
+    0xc3, 0x3, 0xc, 0x0, 0x3, 0xf0, 0x1f, 0xe0,
+    0xff, 0x9f, 0xff, 0x6f, 0xff, 0x1f, 0xfc, 0x7f,
+    0xf0, 0xfe, 0x7f, 0xf0, 0xe1, 0x80, 0xfc, 0xf6,
+    0x64, 0x7, 0x0, 0x3e, 0x0, 0xd9, 0xbf, 0xef,
+    0xff, 0x27, 0xff, 0xff, 0xff, 0x9f, 0xf0, 0x7f,
+    0xe0, 0xd, 0x80, 0x3e, 0x0, 0x70
+};
+
+/*---------------------
+ *  GLYPH DESCRIPTION
+ *--------------------*/
+
+static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
+    {.bitmap_index = 0, .adv_w = 0, .box_w = 0, .box_h = 0, .ofs_x = 0, .ofs_y = 0} /* id = 0 reserved */,
+    {.bitmap_index = 0, .adv_w = 128, .box_w = 8, .box_h = 8, .ofs_x = 4, .ofs_y = 2},
+    {.bitmap_index = 8, .adv_w = 256, .box_w = 16, .box_h = 16, .ofs_x = 0, .ofs_y = -2},
+    {.bitmap_index = 40, .adv_w = 96, .box_w = 6, .box_h = 6, .ofs_x = 3, .ofs_y = 5},
+    {.bitmap_index = 45, .adv_w = 224, .box_w = 14, .box_h = 13, .ofs_x = 1, .ofs_y = 0},
+    {.bitmap_index = 68, .adv_w = 256, .box_w = 16, .box_h = 12, .ofs_x = 0, .ofs_y = 0},
+    {.bitmap_index = 92, .adv_w = 224, .box_w = 14, .box_h = 14, .ofs_x = 1, .ofs_y = -1},
+    {.bitmap_index = 117, .adv_w = 224, .box_w = 14, .box_h = 14, .ofs_x = 1, .ofs_y = -1},
+    {.bitmap_index = 142, .adv_w = 224, .box_w = 14, .box_h = 15, .ofs_x = 1, .ofs_y = -2},
+    {.bitmap_index = 169, .adv_w = 224, .box_w = 14, .box_h = 15, .ofs_x = 1, .ofs_y = -2},
+    {.bitmap_index = 196, .adv_w = 224, .box_w = 14, .box_h = 10, .ofs_x = 1, .ofs_y = 3},
+    {.bitmap_index = 214, .adv_w = 64, .box_w = 4, .box_h = 6, .ofs_x = 6, .ofs_y = -2},
+    {.bitmap_index = 217, .adv_w = 224, .box_w = 14, .box_h = 12, .ofs_x = 1, .ofs_y = 0}
+};
+
+/*---------------------
+ *  CHARACTER MAPPING
+ *--------------------*/
+
+static const uint16_t unicode_list_0[] = {
+    0x0, 0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8, 0x9, 0xa, 0xb
+};
+
+static const lv_font_fmt_txt_cmap_t cmaps[] =
+{
+    {
+        .range_start = 57344, .range_length = 12, .glyph_id_start = 1,
+        .unicode_list = unicode_list_0, .glyph_id_ofs_list = NULL, .list_length = 12, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
+    }
+};
+
+#if LVGL_VERSION_MAJOR == 8
+static  lv_font_fmt_txt_glyph_cache_t cache;
+#endif
+
+#if LVGL_VERSION_MAJOR >= 8
+static const lv_font_fmt_txt_dsc_t font_dsc = {
+#else
+static lv_font_fmt_txt_dsc_t font_dsc = {
+#endif
+    .glyph_bitmap = glyph_bitmap,
+    .glyph_dsc = glyph_dsc,
+    .cmaps = cmaps,
+    .kern_dsc = NULL,
+    .kern_scale = 0,
+    .cmap_num = 1,
+    .bpp = 1,
+    .kern_classes = 0,
+    .bitmap_format = 0,
+#if LVGL_VERSION_MAJOR == 8
+    .cache = &cache
+#endif
+};
+
+#if LVGL_VERSION_MAJOR >= 8
+const lv_font_t weather_icons_v2_16 = {
+#else
+lv_font_t weather_icons_v2_16 = {
+#endif
+    .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,
+    .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,
+    .line_height = 16,
+    .base_line = 2,
+#if !(LVGL_VERSION_MAJOR == 6 && LVGL_VERSION_MINOR == 0)
+    .subpx = LV_FONT_SUBPX_NONE,
+#endif
+#if LV_VERSION_CHECK(7, 4, 0) || LVGL_VERSION_MAJOR >= 8
+    .underline_position = -3,
+    .underline_thickness = 2,
+#endif
+    .dsc = &font_dsc,
+#if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
+    .fallback = NULL,
+#endif
+    .user_data = NULL,
+};
+
+#endif /*#if WEATHER_ICONS_V2_16*/

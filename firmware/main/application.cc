@@ -5,6 +5,7 @@
 #include "board.h"
 #include "common/photo_storage.h"
 #include "common/presence_api.h"
+#include "common/weather_api.h"
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
@@ -132,6 +133,14 @@ time_t ComputeNextQuietHoursWakeEpoch(time_t now) {
 // bridge actually runs.
 constexpr char kPresenceBridgeEndpoint[] = CONFIG_PRESENCE_BRIDGE_ENDPOINT;
 
+// Weather location sent as OpenWeatherMap One Call 3.0's `lat`/`lon`
+// parameters ("lat,lon" decimal degrees). Configured via Kconfig
+// ("Deployment defaults" > Weather location / Weather API key,
+// CONFIG_WEATHER_LOCATION / CONFIG_WEATHER_API_KEY) - never hardcode a real
+// API key here.
+constexpr char kWeatherLocation[] = CONFIG_WEATHER_LOCATION;
+constexpr char kWeatherApiKey[] = CONFIG_WEATHER_API_KEY;
+
 std::string FormatMinutesLabel(int minutes) {
     if (minutes <= 0) return i18n::Tr(i18n::StringId::kOff);
     char buf[16];
@@ -218,6 +227,19 @@ void StartPresenceApiOnce() {
         auto* manager = Application::GetInstance().GetRawDrawUiManager();
         if (manager) {
             manager->UpdatePresenceStatus(status);
+        }
+    });
+}
+
+void StartWeatherApiOnce() {
+    static bool s_started = false;
+    if (s_started) return;
+    s_started = true;
+
+    weather_api_init(kWeatherApiKey, kWeatherLocation, [](const WeatherData& data) {
+        auto* manager = Application::GetInstance().GetRawDrawUiManager();
+        if (manager) {
+            manager->UpdateWeatherData(data);
         }
     });
 }
@@ -446,6 +468,7 @@ void Application::Initialize() {
                 wifi_connected_.store(true, std::memory_order_release);
                 StartSntpClockSyncOnce();
                 StartPresenceApiOnce();
+                StartWeatherApiOnce();
                 if (rawdraw_ui_manager_ && !rawdraw_ui_manager_->IsLanHttpServerRunning() &&
                     Settings(kNetworkNamespace, false).GetBool(kLanServerEnabledKey, kLanServerEnabledDefault)) {
                     const std::string ip = data.empty() ? WifiManager::GetInstance().GetIpAddress() : data;

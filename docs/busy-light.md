@@ -2,6 +2,10 @@
 
 This document records where the busy-light feature (office-door presence display) currently stands: the data contract, the two mock/bridge server implementations, and what's still not built.
 
+![Free, tomorrow footer](images/busy-light/01-free-tomorrow.png)
+
+*Idle/cam-off state after 17:00, showing the "First meeting tomorrow at 09:30" line above the footer hint.*
+
 ## Status
 
 Contract-first, not backend-first — but the real backend is live now. `server/calendar_bridge.py` is a real bridge (`/calendar/today` against a calendar webhook, `/live` against Home Assistant sensors), verified end-to-end against the actual webhook/HA instance and confirmed on-device (default face correctly showing FREE/CAM OFF against an empty calendar and idle sensors). `kPresenceBridgeEndpoint` in `application.cc` doesn't distinguish mock from real — it's just whatever server happens to be running at that LAN IP/port, so switching between them is an operational choice (which server process is up), not a firmware change. `server/mock_presence_server.py` is kept around for offline dev/demo.
@@ -125,9 +129,9 @@ Captured on-device (4-color e-ink panel), default face unless noted otherwise.
 
 | | |
 | --- | --- |
-| ![Free, tomorrow footer](images/busy-light/01-free-tomorrow.png) **Free, tomorrow footer** — idle/cam-off state after 17:00, showing the "First meeting tomorrow at 09:30" line above the footer hint. | ![Busy](images/busy-light/02-busy.png) **Busy** — internal-tier meeting in progress, "until HH:MM" line reflecting the active event. |
-| ![Busy, presenting](images/busy-light/03-busy-presenting.png) **Busy + presenting** — same as above with screen-share/do-not-disturb active, adding the "Presenting — do not disturb" banner. | ![Detail face](images/busy-light/04-detail.png) **Detail face** — zoomed day grid, header strip in sync with the current AV/tier state. |
-| ![Busy, customer tier](images/busy-light/05-busy-customer-real.png) **Busy, customer tier** — real (non-debug) calendar data, red band + presenting banner for a customer-tier meeting. | ![Detail face, colorful](images/busy-light/06-detail-colorful.png) **Detail face, colorful** — day grid showing a solid-red customer-tier block and a yellow-rule leadership-tier block. |
+| ![Busy](images/busy-light/02-busy.png) **Busy** — internal-tier meeting in progress, "until HH:MM" line reflecting the active event. | ![Busy, presenting](images/busy-light/03-busy-presenting.png) **Busy + presenting** — same as above with screen-share/do-not-disturb active, adding the "Presenting — do not disturb" banner. |
+| ![Detail face](images/busy-light/04-detail.png) **Detail face** — zoomed day grid, header strip in sync with the current AV/tier state. | ![Busy, customer tier](images/busy-light/05-busy-customer-real.png) **Busy, customer tier** — real (non-debug) calendar data, red band + presenting banner for a customer-tier meeting. |
+| ![Detail face, colorful](images/busy-light/06-detail-colorful.png) **Detail face, colorful** — day grid showing a solid-red customer-tier block and a yellow-rule leadership-tier block. | |
 
 ### Detail-face layout callouts
 

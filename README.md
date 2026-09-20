@@ -186,14 +186,15 @@ where each page is one module. Current modules reachable via the
 quick-switch menu:
 
 - **BusyLight**: presence/calendar status (see the bridge section above).
+- **Weather**: current conditions + 3-day forecast + a rain/snow/wind/heat
+  alert bar, backed by OpenWeatherMap One Call 3.0 — see
+  [`docs/weather.md`](docs/weather.md).
 - **Gallery**: photo thumbnails, full-image view (PhotoDetail), and the AP/LAN
   photo-transfer entry points.
 - **Settings**: volume, brightness, network, LAN service toggle, etc.
 
 Also present but not in the quick-switch (debug/setup only):
 
-- **Weather**: currently a bare-bones placeholder with no live data source —
-  a visual rebuild against a real weather API is planned separately.
 - **Wifi** / **APTransfer**: shown automatically during Wi-Fi config / AP
   photo-transfer flows, not user-selectable pages.
 - **FontDebug** / **FontMetrics**: hardware alignment/calibration pages, kept

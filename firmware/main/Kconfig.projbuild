@@ -65,7 +65,7 @@ menu "Deployment defaults"
 
     config PRESENCE_BRIDGE_ENDPOINT
         string "Presence/calendar bridge base URL"
-        default "http://192.168.178.37:8080"
+        default ""
         help
             Base URL (scheme + host, optionally :port, no trailing slash) of
             the server/calendar_bridge.py or server/presence_bridge.py
@@ -74,6 +74,50 @@ menu "Deployment defaults"
             behind a reverse proxy) works fine here - esp_http_client
             resolves it via the normal DNS resolver, this only needs to be
             a plain LAN IP if no public/LAN DNS entry exists for it.
+
+            Leave empty to disable the busy-light module's presence fetch -
+            it will just show no presence data. Set your own deployment's
+            address locally (sdkconfig, gitignored) rather than committing
+            a real address here.
+
+    config WEATHER_API_KEY
+        string "OpenWeatherMap API key"
+        default ""
+        help
+            API key for https://openweathermap.org/api/one-call-3 (sign up
+            at https://home.openweathermap.org/users/sign_up - One Call 3.0
+            requires a payment method on file but includes a free monthly
+            call allowance). Leave empty to disable the Weather module's
+            live data fetch - the page will just show a "no weather data"
+            placeholder.
+
+            This ends up baked into your local sdkconfig (gitignored), same
+            as any other Kconfig value - treat it like a deployment secret
+            and never put a real key in sdkconfig.defaults.esp32s3 or here.
+
+    config WEATHER_LOCATION
+        string "Weather location (lat,lon decimal degrees)"
+        default "53.5511,9.9937"
+        help
+            Passed as OpenWeatherMap One Call 3.0's `lat`/`lon` query
+            parameters - must be "lat,lon" decimal-degree coordinates (a
+            free-form city name is not accepted by this endpoint). Default
+            is Hamburg, Germany. Look up coordinates for another location
+            at https://openweathermap.org/find or any map service.
+
+    choice WEATHER_UNITS
+        prompt "Weather temperature unit"
+        default WEATHER_UNITS_CELSIUS
+        help
+            Default/only temperature unit shown on the Weather page. No
+            on-device toggle exists yet - this is build-time only.
+
+        config WEATHER_UNITS_CELSIUS
+            bool "Celsius (°C)"
+
+        config WEATHER_UNITS_FAHRENHEIT
+            bool "Fahrenheit (°F)"
+    endchoice
 
     choice DEFAULT_UI_LANGUAGE
         prompt "Default UI language at first boot"
@@ -88,6 +132,27 @@ menu "Deployment defaults"
 
         config DEFAULT_UI_LANGUAGE_ZH_CN
             bool "Chinese (zh-CN)"
+    endchoice
+
+    choice DEFAULT_UI_MODULE
+        prompt "Default module shown at boot"
+        default DEFAULT_UI_MODULE_BUSY_LIGHT
+        help
+            Which page-selection-menu module the device opens to on boot.
+            Only lists modules reachable via the normal quick-switch menu
+            (BOOT click) - see RawDrawUiManager::GetQuickSwitchItems().
+
+        config DEFAULT_UI_MODULE_BUSY_LIGHT
+            bool "Busy light"
+
+        config DEFAULT_UI_MODULE_WEATHER
+            bool "Weather"
+
+        config DEFAULT_UI_MODULE_GALLERY
+            bool "Photo gallery"
+
+        config DEFAULT_UI_MODULE_SETTINGS
+            bool "Settings"
     endchoice
 
     config DEFAULT_SYNC_INTERVAL_MIN

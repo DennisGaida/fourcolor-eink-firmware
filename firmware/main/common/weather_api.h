@@ -1,16 +1,26 @@
 /**
  * @file weather_api.h
- * @brief HeWeather (和风天气 / "Wind and Weather") API client for ESP32
+ * @brief OpenWeatherMap One Call 3.0 client for ESP32
  *
- * Fetches real-time weather data via HTTP GET. Uses esp_http_client
- * with select()-based timeout (NO setsockopt(SO_RCVTIMEO)).
+ * Fetches current conditions + an 8-day daily forecast + any active
+ * government weather alerts in a single HTTP GET to OpenWeatherMap's One
+ * Call 3.0 endpoint. Uses esp_http_client.
  *
- * API: https://dev.qweather.com/docs/api/weather/weather-now/
+ * API docs: https://openweathermap.org/api/one-call-3
+ *
+ * Chosen over WeatherAPI.com (the original provider) because its response
+ * is roughly 10x smaller (~5KB vs ~50KB+ for a comparable forecast window,
+ * friendlier to the device's limited RAM) and it can surface real
+ * authority-issued alerts (e.g. national weather service warnings) instead
+ * of a purely heuristic guess.
  *
  * Usage:
- * 1. weather_api_init("YOUR_KEY", "hangzhou")
- * 2. Callback receives WeatherData on success
- * 3. Timer triggers hourly auto-refresh
+ * 1. weather_api_init(api_key, location, callback) - location must be
+ *    "lat,lon" (decimal degrees) - One Call 3.0 only accepts coordinates,
+ *    not a free-form city/query string.
+ * 2. Callback receives WeatherData on each successful fetch.
+ * 3. A timer triggers an hourly auto-refresh; weather_api_fetch_now() can
+ *    trigger one on demand (e.g. a manual refresh button).
  */
 
 #ifndef WEATHER_API_H
@@ -27,102 +37,104 @@
 // ============================================================
 
 /**
- * @brief Parsed weather data from HeWeather API
+ * @brief Icon bucket for rendering. Still far smaller than OpenWeatherMap's
+ * ~50 condition IDs, but expanded beyond the original 5 glyphs (see
+ * weather_icons.h / weather_icons_extra_48.c) to distinguish a few visually
+ * distinct cases that were previously collapsed into Cloudy/Rain.
  */
+enum class WeatherIcon {
+    Sunny,        // clear/sunny
+    PartlyCloudy, // few/scattered clouds (<=50% cover)
+    Cloudy,       // broken/overcast clouds, tornado, squalls, etc. (fallback)
+    Fog,          // mist/fog/haze/smoke/dust/sand/ash
+    Drizzle,      // light drizzle
+    Rain,         // moderate rain/showers
+    HeavyRain,    // heavy/very heavy/extreme/freezing rain, heavy showers
+    Snow,         // any snow/sleet/ice
+    Thunder,      // thunderstorms
+    Unknown,      // fallback
+};
+
+/**
+ * @brief Map an OpenWeatherMap condition ID to our reduced icon set
+ * (see https://openweathermap.org/weather-conditions)
+ */
+WeatherIcon WeatherIconForCode(int condition_code);
+
+/**
+ * @brief Bottom alert-bar condition, evaluated across today + the 3-day
+ * forecast (whichever triggers first, in this priority order: rain > snow
+ * > wind > heat), unless OpenWeatherMap has an active real government
+ * alert for the location - that always takes priority (kOfficial).
+ * day_label is "TODAY" or an upper-case weekday name.
+ */
+enum class WeatherAlertType {
+    kNone,
+    kRain,
+    kSnow,
+    kWind,
+    kHeat,
+    kOfficial,  // real alert from OWM's alerts[] (e.g. a national weather service warning)
+};
+
+struct WeatherAlert {
+    WeatherAlertType type = WeatherAlertType::kNone;
+    std::string day_label;  // "TODAY" / "MONDAY" / ...
+    std::string event_text; // real alert headline (kOfficial only), e.g. "Gale Force Gusts"
+};
+
 struct WeatherForecastDay {
-    std::string label;        // Today / Tomorrow / etc.
-    std::string weather_text; // Sunny / Cloudy / Light rain
-    std::string icon_code;    // QWeather icon code string
+    std::string weekday_label;   // "SUN", "MON", ... (upper-case, 3-letter)
+    std::string condition_text;  // e.g. "Partly cloudy"
+    int32_t condition_code = 0;
+    int32_t temp_max = 0;   // rounded, in the configured unit (C or F)
     int32_t temp_min = 0;
-    int32_t temp_max = 0;
 };
 
 struct WeatherData {
-    std::string city;         // City name in Chinese
-    std::string temp;         // Current temperature (e.g., "25")
-    std::string feels_like;   // Feels like temperature (e.g., "27")
-    std::string weather_icon; // QWeather icon code for current weather (e.g., "100")
-    std::string weather_text; // Weather condition (e.g., "晴" / Sunny, "多云" / Cloudy, "小雨" / Light rain)
-    std::string wind_dir;     // Wind direction (e.g., "东南风" / Southeast wind)
-    std::string wind_scale;   // Wind scale (e.g., "3")
-    std::string humidity;     // Humidity percentage (e.g., "45")
-    std::string update_time;  // Last update time (e.g., "14:30")
-    std::string air_quality;  // Air quality text (e.g., "优" / Excellent)
-    int32_t air_aqi = -1;     // AQI number
-    int32_t temp_int;         // Numeric temperature for icon selection
-    std::vector<WeatherForecastDay> forecast;
-};
+    std::string location_name;   // e.g. "Hamburg"
+    std::string date_label;      // e.g. "SATURDAY / SEP 20"
 
-/**
- * @brief Weather icon codes for 1bpp rendering
- * Maps weather condition text to icon character codes.
- */
-enum class WeatherIcon {
-    Sunny,       // 晴 (sunny)
-    Cloudy,      // 多云 (cloudy)
-    Overcast,    // 阴 (overcast)
-    Rain,        // 雨 (any rain type)
-    Snow,        // 雪 (snow)
-    Fog,         // 雾 (fog)
-    Unknown,     // Fallback
-};
+    int32_t temp = 0;            // current temp, rounded, configured unit
+    std::string condition_text;  // e.g. "Partly cloudy"
+    int32_t condition_code = 0;
+    int32_t temp_max_today = 0;
+    int32_t temp_min_today = 0;
 
-/**
- * @brief Map weather condition text to icon type
- */
-WeatherIcon ParseWeatherIcon(const char* weather_text);
+    std::vector<WeatherForecastDay> forecast;  // next 3 days (today excluded)
+    WeatherAlert alert;
+};
 
 // ============================================================
 // API interface
 // ============================================================
 
-/**
- * @brief Callback type for weather data delivery
- */
 using WeatherCallback = std::function<void(const WeatherData&)>;
 
 /**
- * @brief Initialize weather API client
+ * @brief Initialize the OpenWeatherMap One Call 3.0 client
  *
- * Sets up the hourly auto-refresh timer using esp_timer.
+ * Sets up the hourly auto-refresh timer and fetches immediately.
  *
- * @param api_key HeWeather API key
- * @param city_code City location ID (e.g., "101210101" for Hangzhou)
- * @param callback Function called when data arrives
+ * @param api_key OpenWeatherMap API key (CONFIG_WEATHER_API_KEY)
+ * @param location "lat,lon" decimal-degree coordinates (CONFIG_WEATHER_LOCATION)
+ * @param callback Called with fresh WeatherData on each successful fetch
  */
-void weather_api_init(const char* api_key, const char* city_code, WeatherCallback callback);
+void weather_api_init(const char* api_key, const char* location, WeatherCallback callback);
 
 /**
  * @brief Trigger a manual weather data fetch
- *
- * @return true if request started, false if already in progress
+ * @return true if a request was started, false if one was already in progress
  */
 bool weather_api_fetch_now();
 
 /**
- * @brief Change the city
- *
- * @param city_code New city location ID
- */
-void weather_api_set_city(const char* city_code);
-
-/**
- * @brief Set the API key
- */
-void weather_api_set_key(const char* api_key);
-
-/**
- * @brief Get the current city code
- */
-const char* weather_api_get_city();
-
-/**
- * @brief Check if API client is initialized
+ * @brief Check if the API client has been initialized
  */
 bool weather_api_is_ready();
 
 /**
- * @brief Get the last fetched weather data
+ * @brief Get the last successfully fetched weather data
  */
 const WeatherData* weather_api_get_last_data();
 
