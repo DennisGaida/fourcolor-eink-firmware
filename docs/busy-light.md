@@ -58,6 +58,19 @@ Field reference:
 | `events[].start` / `events[].end` | Local `"HH:MM"` strings, no timezone math needed on-device |
 | `events[].title` | Event title, shown as-is (or redacted to "Busy" by a bridge, before it ever leaves the source network) |
 | `events[].tier` | One of `solo` / `internal` / `leadership` / `customer`. Drives the door-fill style on the detail-face day grid (outline / outline / yellow-rule / solid-red) and the "come in" / "knock" / "quiet" line on the default face. `solo` (no other attendees — e.g. "Lunch") currently renders identically to `internal`; it exists as a distinct tier for parity with the real feed, not because the renderer treats it specially yet. Unknown/missing tier defaults to `internal`, the least alarming reading. |
+
+#### Day-grid block styling (detail face)
+
+`TierColor()`/the tier `switch` in `DrawDetailFace()` only cover three visual fills — `solo` and unknown/missing tiers fall through the same `default:` case as `internal`, so all three read identically (a plain white box with a black outline). This is intentional, not a gap to "fix": there's no attendee-importance signal to distinguish `solo` from `internal` yet.
+
+A **fourth**, separate visual state exists that's easy to mistake for a tier: any event whose `end_minutes` is already in the past (relative to render time) is rendered with `DrawStripeRect()` — a 1px-alternating black/white horizontal hatch — regardless of its tier, before the title text is drawn on top. Because the title is drawn in black, it disappears wherever it lands on a black stripe row, giving already-finished events a "struck-through"/hard-to-read look (e.g. "Standup" in the annotated screenshot in the Screenshots section below). This is deliberate — a glance at the grid should show what's already over without reading a single title — but it's a *time-based* override of the tier fill, not a fifth tier or a rendering bug in the `solo`/`internal` styling.
+
+| Fill | Meaning |
+| --- | --- |
+| White box, black outline | `internal` or `solo` tier, still upcoming/in-progress |
+| Yellow box, black outline, heavy black top/bottom rule | `leadership` tier, still upcoming/in-progress |
+| Solid red box, black outline, white text | `customer` tier, still upcoming/in-progress |
+| Black/white horizontal hatch, black outline | Event already ended (`end_minutes <= now_minutes`) — tier-independent, always wins over the tier fill |
 | `events[].participants` | JSON-encoded **string** (not a nested array) — e.g. `"[\"Alice\",\"Bob\"]"` or `"[\"More than 10 participants\"]"`. Not yet read by the firmware. |
 | `events[].participant_count` | Decimal **string**, not a number — e.g. `"14"`. Not yet read by the firmware. |
 
@@ -116,7 +129,38 @@ Captured on-device (4-color e-ink panel), default face unless noted otherwise.
 | ![Busy, presenting](images/busy-light/03-busy-presenting.png) **Busy + presenting** — same as above with screen-share/do-not-disturb active, adding the "Presenting — do not disturb" banner. | ![Detail face](images/busy-light/04-detail.png) **Detail face** — zoomed day grid, header strip in sync with the current AV/tier state. |
 | ![Busy, customer tier](images/busy-light/05-busy-customer-real.png) **Busy, customer tier** — real (non-debug) calendar data, red band + presenting banner for a customer-tier meeting. | ![Detail face, colorful](images/busy-light/06-detail-colorful.png) **Detail face, colorful** — day grid showing a solid-red customer-tier block and a yellow-rule leadership-tier block. |
 
+### Detail-face layout callouts
+
+![Detail face, annotated](images/busy-light/07-detail-annotated.png)
+
+Five non-overlapping regions make up `RenderDetailFace()`:
+
+1. **Top-top bar** — the shared OS status chrome (signal, date, "Busy Light" title, battery), above `Style::kStatusBarHeight`; not drawn by this renderer.
+2. **Top bar** — the tier word ("MEETING"/"FREE") plus the camera glyph/"CAM ON"/"CAM OFF" state (`kHeaderTop`/`kHeaderHeight`). The one region that can redraw on its own via a small dirty-rect refresh (see "Redraw behavior" above).
+3. **Left side (time)** — the hour-of-day rail (`kLeftMargin`, 34px wide): hour labels, the dashed hour gridlines (mostly hidden under opaque event fills), and the now-marker flag. Scrolls with UP/DOWN (see "Detail-face UP/DOWN scroll" below).
+4. **Calendar view** — the whole day-grid: every event block, colored/hatched per its tier or past/finished state. See "Day-grid block styling" above for what each fill (white outline, yellow + rule, solid red, black/white hatch) means.
+5. **Bottom** — the "+N later" (and, scrolled the other way, "+N earlier") overflow label, summarizing events outside the zoomed window (here, "1 later"); an equivalent "+N more" pill (not pictured) can also appear when more than 2 events overlap the same time slot.
+
+### Default-face layout callouts
+
+![Default face, annotated](images/busy-light/08-default-annotated.png)
+
+Seven non-overlapping regions make up `RenderDefaultFace()` (the hallway view):
+
+1. **OS status bar** — clock/signal/battery, shared chrome above `Style::kStatusBarHeight`, not drawn by the busy-light renderer itself.
+2. **Color band** — full-width, red whenever `status.band_elevated` (leadership, customer, an ad-hoc call, or presenting), otherwise white; always reserves the same height so nothing else in the layout shifts.
+3. **Day rail** — a full-day (`kHourStart`–`kHourEnd`, 8–18) mini timeline: a bracket/track with a black tick per calendar event (red only for `customer` tier — see `RailColor()`) and a black double-line "now" marker. Unlike the detail-face grid, it never shows titles/times, just shape.
+4. **Headline word** — just "MEETING"/"FREE" itself, 3x the native font size (`DrawScaledText`, no larger Latin font asset exists in this build). The "until HH:MM"/"CAM OFF" line right below it is deliberately left unboxed here — it's minor enough not to need its own callout.
+5. **Human line** — e.g. "Internal — come in", "Internal — important", "Customer", "Ad-hoc call"; the tier-carrying segment is colored red AND bold so it doesn't rely on color alone.
+6. **Presenting banner** — yellow bar, shown only while screen-share/do-not-disturb is active (`current_.presenting`); when absent (as in a screenshot without it), the space below the human line is simply blank, not a missing element — see area 8 below for another thing that can occupy that same blank space.
+7. **Footer hint + chevron** — "press for today's plan" plus a yellow circular chevron, hinting that BOOT opens the detail face.
+
+An eighth region only appears conditionally, so it's shown separately:
+
+![Default face, tomorrow footer line, annotated](images/busy-light/09-default-tomorrow-annotated.png)
+
+8. **Tomorrow footer line** — from 17:00 local time onward, one extra line directly above the footer: `"First meeting tomorrow at HH:MM"` (with the time in a bold yellow highlight chip, as pictured) or `"No meetings tomorrow"`. Before 17:00, or if tomorrow's data hasn't resolved yet, this slot is simply omitted — it's independent of the presenting banner (area 6); both can appear at once if presenting is active after 17:00, stacked rather than overlapping.
+
 ## Not yet built
 
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
-- The device-side HTTP response buffer is fixed at 8KB (`firmware/main/common/presence_api.cc`) — sized for a busy single day with long titles, not for a third `days` entry or an unusually large participant list.
