@@ -2,20 +2,13 @@
 
 ## Secrets
 
-- Do not commit `.env` or any credential-bearing local config file.
-- Rotate STT provider keys immediately if they are ever pasted into an issue, PR, or commit.
-- Use `.env.example` as the only tracked configuration template.
+- Do not commit `server/.env` or any credential-bearing local config file — only `server/.env.example` is tracked.
+- The presence/calendar bridge (`server/calendar_bridge.py` / `presence_bridge.py`) handles `HA_TOKEN` and `CALENDAR_SOURCE_SECRET`; rotate these immediately if ever pasted into an issue, PR, or commit. Both also support the `<VAR>_FILE` convention for Docker/Kubernetes secrets instead of putting raw values in `.env`.
 
-## Audio And Transcript Data
+## Device-Exposed Network Surfaces
 
-- This bridge sends captured audio to the configured STT provider.
-- Review provider retention, logging, and privacy settings before using real customer or private source code prompts.
-- Debug WAV files are only written when `SAVE_DEBUG_WAV=1`.
-
-## Local Session Data
-
-- If you run with `SEND_TARGET=codex_exec`, Codex may persist its own session history in the current user's profile directory.
-- This repository does not intentionally write credentials into the repo tree, but local tooling may keep per-user history outside the repository.
+- **AP photo transfer**: the device hosts an open Wi-Fi AP (`InkScreen-AP`, default password `12345678`) with an unauthenticated HTTP upload page while transfer mode is active. Anyone in range who knows/guesses the password can push images to the device during that window.
+- **LAN photo push**: the `/upload` HTTP API exposed once "LAN Service" is enabled (see [`docs/LAN_PHOTO_PUSH_API.md`](docs/LAN_PHOTO_PUSH_API.md)) has no authentication — anything on the same LAN can push images to the device. Only enable it on a trusted network.
 
 ## Reporting
 

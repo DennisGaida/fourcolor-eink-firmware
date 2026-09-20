@@ -1,18 +1,43 @@
 # FourColor Ink
 
-This is a personal AI assistant project for ESP32-S3 e-ink devices. The current mainline consists of three parts: ESP32 firmware, a Python backend service, and photo/todo/device management pages.
+This is an ESP32-S3 four-color e-ink device firmware project. The mainline consists
+of two parts: the ESP32 firmware itself, and a small Python bridge script under
+`server/` that feeds it presence/calendar data over HTTP — required for the
+busy-light module to show real data (the firmware still builds and runs
+without it, but busy-light has nothing to display).
 
-The focus of this project is not a generic npm package, but a system that actually runs on an e-ink device: voice conversation, TTS playback, todo sync, weather/news/calendar/e-book/album pages, AP photo transfer, OTA firmware management, and a RawDraw UI adapted for four-color screens.
+The firmware is organized into modules, each an independent page reachable from
+the quick-switch menu: a busy-light indicator (backed by the presence/calendar
+bridge), a photo gallery (with AP/LAN photo transfer), a weather page, and a
+settings page. A handful of unfinished experiments (chat, ebook reader, news,
+calendar) live under `firmware/experiments/` — see
+[`firmware/experiments/README.md`](firmware/experiments/README.md) — excluded
+from the build until someone picks them back up.
 
-## 2BP Four-Color Image Pipeline
+## Architecture
 
-![FourColor Ink 2BP BWRY architecture](README-2bp-architecture.png)
+![FourColor Ink modular architecture](docs/images/README-Device-Mockup.png)
 
-Album images can enter the server either from a PC/NAS management console or from the device's AP page, and are converted to `2BP BWRY` (black, white, red, yellow) before being pushed over Wi-Fi to the ESP32-S3 four-color e-ink screen. This repo's 2BP four-color pipeline is maintained independently from NOTE4's 4BP black/white grayscale album: panel colors, pixel formats, and refresh drivers all differ.
+Applications (BusyLight, Weather, Gallery, Settings, and any future modules)
+plug into a shared base firmware layer (drivers, Wi-Fi/BLE, module registry,
+storage, OTA) running on the ESP32-S3 hardware.
+
+## Photo Transfer
+
+Album images reach the device either over the AP photo-transfer hotspot the
+firmware itself hosts, or over the LAN photo-push HTTP API the firmware
+exposes once LAN service is enabled (see
+[`docs/LAN_PHOTO_PUSH_API.md`](docs/LAN_PHOTO_PUSH_API.md)) — both are served
+directly by the ESP32, there is no PC/server-side image service. Images are
+converted to `2BP BWRY` (black, white, red, yellow) before being written to
+the four-color e-ink screen.
 
 ## Current Status
 
-- The backend has switched to the Python service under `server/`; the old root-level Node `scripts/` has been removed.
+- There is no LLM/voice/chat backend in this repo. `server/` only contains
+  small, optional bridge scripts (presence/calendar) and a few local dev/debug
+  tools — see [Presence/Calendar Bridge](#presencecalendar-bridge-busy-light)
+  below.
 - The firmware's main UI is rendered with RawDraw, designed by default for four-color screens, while still keeping 1bpp black/white compatibility.
 - Themes currently keep a single default visual direction: a Nintendo-esque four-color theme, emphasizing the semantic use of red, yellow, black, and white.
 - Image transfer supports both 1bpp black/white and 2bpp four-color BWRY formats.
@@ -22,15 +47,12 @@ Album images can enter the server either from a PC/NAS management console or fro
 
 ```text
 .
-├── firmware/        ESP32-IDF firmware, RawDraw UI, page rendering, screen drivers, AP photo transfer
-├── server/          Python backend, WebSocket conversation, TTS, discovery, image push, OTA API
-├── frontend/        Management frontend source, using its own package/pnpm workflow
-├── docs/            Historical design docs and implementation notes
-├── documents/       Project reference material
-└── package.json     Only keeps repo-level helper commands, no longer the entry point for the old Node service
+├── firmware/            ESP32-IDF firmware: RawDraw UI, page/module rendering, screen drivers,
+│                        AP + LAN photo transfer, and firmware/scripts/ build tooling
+├── firmware/experiments/ Unfinished modules kept for reference, excluded from the build
+├── server/              Optional Python bridge scripts (presence/calendar) + local dev tools
+└── docs/                Design docs and implementation notes (e.g. the LAN photo push API)
 ```
-
-Note: `firmware/scripts/` and `frontend/scripts/` are still in use, belonging to the firmware tooling and frontend tooling respectively; what was removed is the legacy root-level `scripts/`.
 
 ## Presence/Calendar Bridge (Busy Light)
 
@@ -74,90 +96,33 @@ Kubernetes secrets convention (e.g. `HA_TOKEN_FILE=/run/secrets/ha_token`)
 as an alternative to putting the raw secret in `.env` - see the commented
 `secrets:` example in `server/docker-compose.yml`.
 
-## Backend Service
+## Other `server/` Scripts
 
-The backend entry point is `server/llmserve.py`, best managed via `server/start.sh`. Default service ports:
+Besides `calendar_bridge.py`/`presence_bridge.py`, `server/` has a few local
+dev/debug helpers, none of which need to run for normal device operation:
 
-| Port | Protocol | Purpose |
-| --- | --- | --- |
-| `9001` | WebSocket | ESP32 voice, LLM, TTS, sync messages |
-| `8766` | UDP | Device discovery |
-| `8766` | HTTP | Image push, device image management, OTA API |
-| `8090` | HTTP | Standalone management service, optional |
-
-### Install Dependencies
-
-```bash
-cd server
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### Start the Service
-
-```bash
-export DASHSCOPE_API_KEY=your_dashscope_api_key
-cd server
-./start.sh start
-```
-
-Common commands:
-
-```bash
-cd server
-./start.sh status
-./start.sh logs
-./start.sh restart
-./start.sh stop
-```
-
-You can also invoke these from the repo root:
-
-```bash
-npm run server:start
-npm run server:status
-npm run server:logs
-```
-
-### Local Mock Device
-
-```bash
-cd server
-python3 mock_client.py --server ws://127.0.0.1:9001
-```
+- `mock_presence_server.py` — a fake `/live`+`/calendar/today` HTTP server for
+  exercising the busy-light page without real Home Assistant/calendar
+  credentials.
+- `press_button.py`, `screenshot.py` — local hardware test helpers.
+- `mock_client.py` — a WebSocket client for a voice/LLM/TTS backend that no
+  longer exists in this repo (it was written against an old `llmserve.py`
+  service). It's only useful again if the `chat` experiment (see
+  `firmware/experiments/README.md`) is revived along with a real backend to
+  match it.
 
 ## Photo and Device Management
 
-The image HTTP API is served by `server/push_image.py` on port `8766`. It supports:
+There is no PC-side image server. Photos reach the device one of two ways,
+both served directly by the firmware:
 
-- Uploading an image file, converting it, and pushing it to the device.
-- Choosing between `1bpp` black/white or `2bpp` four-color BWRY format.
-- Querying the device's image list.
-- Deleting device images.
-- Uploading firmware and serving it for OTA download.
-
-Common endpoints:
-
-```bash
-curl http://localhost:8766/api/status
-curl http://localhost:8766/api/images
-```
-
-Example image upload:
-
-```bash
-curl -X POST http://localhost:8766/api/upload_image \
-  -F "image=@/path/to/photo.jpg" \
-  -F "format=bwry2bpp" \
-  -F "title=Photo Title"
-```
-
-Once the device enters AP photo-transfer mode, connect your phone to the device's hotspot and visit:
-
-```text
-http://192.168.4.1
-```
+- **AP photo transfer**: the device hosts a Wi-Fi AP (`InkScreen-AP`) and an
+  HTTP upload page at `http://192.168.4.1` while transfer mode is active
+  (triggered from the Gallery page, see [Button Controls](#button-controls)).
+- **LAN photo push**: once the device is on your Wi-Fi and "LAN Service" is
+  enabled in Settings, it exposes an `/upload` HTTP API on its LAN IP for a
+  NAS/script to push pre-converted `1bpp`/`2bpp` image data on a schedule —
+  fully documented in [`docs/LAN_PHOTO_PUSH_API.md`](docs/LAN_PHOTO_PUSH_API.md).
 
 ## Firmware
 
@@ -203,12 +168,6 @@ source ~/Documents/esp/v6.0/esp-idf/export.sh
 idf.py build
 ```
 
-Root-level helper command:
-
-```bash
-npm run firmware:build
-```
-
 ### Screen Configuration
 
 The firmware Kconfig has a screen type selection:
@@ -222,14 +181,28 @@ To flash back to the old black/white screen, switch to `1bpp black/white EPD` in
 
 ## UI Overview
 
-The firmware UI currently runs on the RawDraw component system. Key pages include:
+The firmware UI runs on the RawDraw component system (`RawDrawUiManager`),
+where each page is one module. Current modules reachable via the
+quick-switch menu:
 
-- Conversation: displays user speech, recognition status, and AI replies.
-- Todos: local display, server sync, complete/delete/edit.
-- Settings: volume, brightness, theme, network, sync, OTA, etc.
-- Album: thumbnail list, full-image view, AP photo-transfer entry point.
-- Weather/weather details, news, almanac, year progress, calendar, e-books, logs.
-- Quick-switch overlay: for fast navigation between pages.
+- **BusyLight**: presence/calendar status (see the bridge section above).
+- **Gallery**: photo thumbnails, full-image view (PhotoDetail), and the AP/LAN
+  photo-transfer entry points.
+- **Settings**: volume, brightness, network, LAN service toggle, etc.
+
+Also present but not in the quick-switch (debug/setup only):
+
+- **Weather**: currently a bare-bones placeholder with no live data source —
+  a visual rebuild against a real weather API is planned separately.
+- **Wifi** / **APTransfer**: shown automatically during Wi-Fi config / AP
+  photo-transfer flows, not user-selectable pages.
+- **FontDebug** / **FontMetrics**: hardware alignment/calibration pages, kept
+  for debugging font rendering.
+
+Unfinished modules (chat, ebook, news, calendar) are parked outside the
+build under `firmware/experiments/` — see
+[`firmware/experiments/README.md`](firmware/experiments/README.md) for what
+each one is and what it'd take to revive it.
 
 The four-color screen theme layer draws components via semantic styles; adding bare `RED/YELLOW/BLACK/WHITE` directly in business pages is discouraged. Prefer RawDraw components and theme tokens when adding new UI.
 
@@ -241,7 +214,7 @@ The device has three physical buttons: UP, DOWN, and BOOT/CONFIRM.
 | --- | --- | --- | --- |
 | UP | Context-sensitive (menu-up / previous item) | Only acts if already on Settings: exits back to Gallery | Opens/closes the quick-switch menu |
 | DOWN | Context-sensitive (menu-down / next item) | Opens Settings (from any page) | Not wired to anything |
-| BOOT/CONFIRM | Confirm/select (e.g. picks the highlighted quick-switch item) | Context-sensitive: exits WiFi-config-AP mode if active, else exits AP photo-transfer mode if running, else starts AP photo-transfer mode from Gallery, else voice push-to-talk | Not wired to anything (reserved for debug screenshot capture, but no hardware handler currently triggers it) |
+| BOOT/CONFIRM | Confirm/select (e.g. picks the highlighted quick-switch item) | Context-sensitive: exits WiFi-config-AP mode if active, else exits AP photo-transfer mode if running, else starts AP photo-transfer mode from Gallery | Reserved globally for debug screenshot capture (no hardware handler currently triggers it) |
 
 UP + DOWN held together (long press) enters WiFi config mode (starts the device's config AP).
 
@@ -249,17 +222,11 @@ Note UP long-press does **not** open Settings — only DOWN long-press does. UP 
 
 ## Environment Variables
 
-Common backend environment variables:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `DASHSCOPE_API_KEY` | none | DashScope (Bailian) API Key, required to start the backend |
-| `LISTEN_HOST` | `0.0.0.0` | WebSocket listen address |
-| `LISTEN_PORT` | `9001` | WebSocket port |
-| `DISCOVERY_PORT` | `8766` | UDP discovery port |
-| `PUSH_IMAGE_PORT` | `8766` | Image/OTA HTTP API port |
-| `TTS_WS_CHUNK_BYTES` | `8000` | TTS push chunk size |
-| `TTS_WS_CHUNK_GAP_SEC` | `0.01` | TTS chunk send interval |
+Presence/calendar bridge configuration lives entirely in `server/.env`
+(copied from `server/.env.example`) — see the
+[Presence/Calendar Bridge](#presencecalendar-bridge-busy-light) section
+above for the variable list. On the firmware side, `PRESENCE_BRIDGE_ENDPOINT`
+is a Kconfig option (`idf.py menuconfig`), not an environment variable.
 
 Do not commit `.env`, databases, logs, pid files, build directories, or firmware artifacts.
 
@@ -268,8 +235,7 @@ Do not commit `.env`, databases, logs, pid files, build directories, or firmware
 Recommended to commit:
 
 - Firmware source such as `firmware/main/`, `firmware/components/`, `firmware/partitions/`.
-- `server/*.py`, `server/static/`, `server/requirements.txt`, `server/DEPLOY.md`.
-- Frontend source such as `frontend/src/`, `frontend/package.json`, `frontend/pnpm-lock.yaml`.
+- `server/*.py`, `server/docker-compose.yml`, `server/Dockerfile`, `server/.env.example`.
 - Root README, docs, config templates.
 
 Do not commit:
@@ -279,9 +245,5 @@ Do not commit:
 - `firmware/sdkconfig`
 - `firmware/releases/`
 - `server/.env`
-- `server/todo.db`
 - `server/*.pid`
 - `server/*.log`
-- `frontend/.env*`
-- `frontend/dist/`
-- `node_modules/`

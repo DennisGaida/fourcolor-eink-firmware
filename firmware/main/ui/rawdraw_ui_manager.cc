@@ -201,20 +201,12 @@ const char* RawDrawUiManager::GetPageTitle(RawDrawPageId page) {
     using i18n::Tr;
     using i18n::StringId;
     switch (page) {
-        case RawDrawPageId::Chat:     return Tr(StringId::kChat);
-        case RawDrawPageId::Ebook:    return Tr(StringId::kEbook);
         case RawDrawPageId::Wifi:     return Tr(StringId::kWifiStatus);
         case RawDrawPageId::Settings: return Tr(StringId::kSettings);
         case RawDrawPageId::Gallery:  return Tr(StringId::kGallery);
         case RawDrawPageId::Weather:  return Tr(StringId::kWeather);
-        case RawDrawPageId::News:     return Tr(StringId::kNews);
         case RawDrawPageId::WeatherDetail: return Tr(StringId::kWeatherDetail);
         case RawDrawPageId::PhotoDetail: return Tr(StringId::kPhotoDetail);
-        case RawDrawPageId::LifeBar:  return Tr(StringId::kLifeProgress);
-        case RawDrawPageId::Almanac:  return Tr(StringId::kAlmanac);
-        case RawDrawPageId::Log:      return Tr(StringId::kLog);
-        case RawDrawPageId::YearProgress: return Tr(StringId::kYearProgress);
-        case RawDrawPageId::Calendar:   return Tr(StringId::kCalendar);
         case RawDrawPageId::FontDebug:  return Tr(StringId::kAlignmentTest);
         case RawDrawPageId::FontMetrics: return Tr(StringId::kFontMetrics);
         case RawDrawPageId::APTransfer: return Tr(StringId::kTransferMode);
@@ -238,8 +230,6 @@ RawDrawUiManager::RawDrawUiManager()
     , voice_wakeup_state_() {
     // Create renderers
     clock_.SetColor(rawdraw::ThemeManager::Get().Style(rawdraw::ThemeToken::Accent).fg);
-    chat_renderer_ = std::make_unique<rawdraw::ChatRenderer>();
-    ebook_renderer_ = std::make_unique<rawdraw::EbookRenderer>();
     wifi_renderer_ = std::make_unique<rawdraw::WifiRenderer>();
     settings_renderer_ = std::make_unique<rawdraw::SettingsRenderer>();
     photo_gallery_renderer_ = std::make_unique<rawdraw::PhotoGalleryRenderer>();
@@ -247,12 +237,6 @@ RawDrawUiManager::RawDrawUiManager()
     weather_renderer_ = std::make_unique<rawdraw::WeatherRenderer>();
     busy_light_renderer_ = std::make_unique<rawdraw::BusyLightRenderer>();
     weather_detail_renderer_ = std::make_unique<rawdraw::WeatherDetailRenderer>();
-    news_renderer_ = std::make_unique<rawdraw::NewsRenderer>();
-    lifebar_renderer_ = std::make_unique<rawdraw::LifeBarRenderer>();
-    almanac_renderer_ = std::make_unique<rawdraw::AlmanacRenderer>();
-    log_renderer_ = std::make_unique<rawdraw::LogRenderer>();
-    yearprogress_renderer_ = std::make_unique<rawdraw::YearProgressRenderer>();
-    calendar_renderer_ = std::make_unique<rawdraw::CalendarRenderer>();
     font_debug_renderer_ = std::make_unique<rawdraw::FontDebugRenderer>();
     font_metrics_renderer_ = std::make_unique<rawdraw::FontMetricsRenderer>();
     ap_transfer_renderer_ = std::make_unique<rawdraw::ApTransferRenderer>();
@@ -580,20 +564,12 @@ void RawDrawUiManager::SetCurrentPageWithoutRender(RawDrawPageId page) {
 
 rawdraw::PageRenderer* RawDrawUiManager::GetRendererForPage(RawDrawPageId page) const {
     switch (page) {
-        case RawDrawPageId::Chat:     return chat_renderer_.get();
-        case RawDrawPageId::Ebook:    return ebook_renderer_.get();
         case RawDrawPageId::Wifi:     return wifi_renderer_.get();
         case RawDrawPageId::Settings: return settings_renderer_.get();
         case RawDrawPageId::Gallery:  return photo_gallery_renderer_.get();
         case RawDrawPageId::Weather:  return weather_renderer_.get();
-        case RawDrawPageId::News:     return news_renderer_.get();
         case RawDrawPageId::WeatherDetail: return weather_detail_renderer_.get();
         case RawDrawPageId::PhotoDetail: return photo_detail_renderer_.get();
-        case RawDrawPageId::LifeBar:  return lifebar_renderer_.get();
-        case RawDrawPageId::Almanac:  return almanac_renderer_.get();
-        case RawDrawPageId::Log:      return log_renderer_.get();
-        case RawDrawPageId::YearProgress: return yearprogress_renderer_.get();
-        case RawDrawPageId::Calendar:   return calendar_renderer_.get();
         case RawDrawPageId::FontDebug:  return font_debug_renderer_.get();
         case RawDrawPageId::FontMetrics: return font_metrics_renderer_.get();
         case RawDrawPageId::APTransfer: return ap_transfer_renderer_.get();
@@ -912,27 +888,10 @@ void RawDrawUiManager::RenderAll(uint8_t* fb, int width, int height) {
         current_page_ == RawDrawPageId::Gallery &&
         photo_gallery_renderer_ &&
         photo_gallery_renderer_->IsFullscreenMode();
-    const bool ebook_portrait_reader =
-        current_page_ == RawDrawPageId::Ebook &&
-        ebook_renderer_ &&
-        ebook_renderer_->IsPortraitReader();
     const bool chrome_free_page = false;
 
     // Update central_text based on current page state
     status_bar_data_.central_text.clear();
-    if (current_page_ == RawDrawPageId::Ebook && ebook_renderer_ && !ebook_portrait_reader) {
-        if (ebook_renderer_->IsReaderMode()) {
-            status_bar_data_.central_text = ebook_renderer_->GetReaderFilename()
-                + "  " + std::to_string(ebook_renderer_->GetCurrentPage() + 1)
-                + "/" + std::to_string(ebook_renderer_->GetTotalPages());
-        }
-    }
-    if (current_page_ == RawDrawPageId::Calendar && calendar_renderer_) {
-        char buf[32];
-        snprintf(buf, sizeof(buf), i18n::Tr(i18n::StringId::kCalendarNavTitle),
-                 calendar_renderer_->GetYear(), calendar_renderer_->GetMonth());
-        status_bar_data_.central_text = buf;
-    }
 
     // Draw the active page content in the content area
     auto* renderer = GetActiveRenderer();
@@ -943,7 +902,7 @@ void RawDrawUiManager::RenderAll(uint8_t* fb, int width, int height) {
     // Fullscreen gallery is intentionally chrome-free: BOOT opens the selected
     // photo as a pure image view with no header/frame. The normal memory-card
     // gallery page still keeps the global shell with title/status bar.
-    if (!gallery_fullscreen && !ebook_portrait_reader && !chrome_free_page) {
+    if (!gallery_fullscreen && !chrome_free_page) {
         // Status bar is drawn after page content so page renderers cannot
         // accidentally paint into the top menu area.
         DrawStatusBar(fb, width, height);
@@ -1549,103 +1508,6 @@ void RawDrawUiManager::PumpClockRefresh() {
 }
 
 // ============================================================
-// Chat page data updates
-// ============================================================
-
-void RawDrawUiManager::AddChatMessage(const std::string& text, rawdraw::ChatRole role) {
-    if (chat_renderer_) {
-        chat_renderer_->AddMessage(text, role);
-        chat_renderer_->MarkFullRefresh();
-
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-void RawDrawUiManager::ClearChat() {
-    if (chat_renderer_) {
-        chat_renderer_->Clear();
-        chat_renderer_->MarkFullRefresh();
-    }
-}
-
-void RawDrawUiManager::BeginChatStream() {
-    if (chat_renderer_) {
-        chat_renderer_->BeginStream();
-        chat_renderer_->MarkFullRefresh();
-
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-bool RawDrawUiManager::AppendChatText(const char* chunk) {
-    if (!chat_renderer_ || !chunk) return false;
-
-    bool appended = chat_renderer_->AppendText(chunk);
-    if (appended && current_page_ == RawDrawPageId::Chat) {
-        chat_renderer_->MarkFullRefresh();
-        RequestActivePageRefresh();
-    }
-    return appended;
-}
-
-void RawDrawUiManager::EndChatStream() {
-    if (chat_renderer_) {
-        chat_renderer_->EndStream();
-        chat_renderer_->MarkFullRefresh();
-
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-void RawDrawUiManager::ShowChatStatus(const std::string& status, rawdraw::ChatRole role) {
-    if (chat_renderer_) {
-        chat_renderer_->ShowStatus(status, role);
-        chat_renderer_->MarkFullRefresh();
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-void RawDrawUiManager::HideChatStatus() {
-    if (chat_renderer_) {
-        chat_renderer_->HideStatus();
-        chat_renderer_->MarkFullRefresh();
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-void RawDrawUiManager::SetChatListening(bool listening) {
-    if (chat_renderer_) {
-        chat_renderer_->SetListening(listening);
-        chat_renderer_->MarkFullRefresh();
-
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-void RawDrawUiManager::SetChatBottomStatus(const std::string& status) {
-    if (chat_renderer_) {
-        chat_renderer_->SetBottomStatus(status);
-        chat_renderer_->MarkFullRefresh();
-
-        if (current_page_ == RawDrawPageId::Chat) {
-            RequestActivePageRefresh();
-        }
-    }
-}
-
-// ============================================================
 // Settings page data updates
 // ============================================================
 
@@ -1755,37 +1617,6 @@ void RawDrawUiManager::SetWifiBlinking(bool blinking) {
         wifi_renderer_->SetBlinking(blinking);
         wifi_renderer_->MarkFullRefresh();
     }
-}
-
-// ============================================================
-// LifeBar visibility toggle
-// ============================================================
-
-void RawDrawUiManager::SetLifeBarVisible(bool visible) {
-    if (lifebar_renderer_) {
-        lifebar_renderer_->SetVisible(visible);
-        lifebar_renderer_->MarkFullRefresh();
-
-        // If currently on the LifeBar page, re-render
-        if (current_page_ == RawDrawPageId::LifeBar) {
-            auto* fb = lcd_ ? lcd_->GetFramebuffer() : nullptr;
-            if (fb) {
-                auto* mutex = lcd_->GetMutex();
-                if (mutex) xSemaphoreTake(mutex, portMAX_DELAY);
-                rawdraw::Clear(fb, width_, height_);
-                RenderAll(fb, width_, height_);
-                if (mutex) xSemaphoreGive(mutex);
-                TriggerRefresh(false);
-            }
-        }
-    }
-}
-
-bool RawDrawUiManager::IsLifeBarVisible() const {
-    if (lifebar_renderer_) {
-        return lifebar_renderer_->IsVisible();
-    }
-    return true;
 }
 
 // ============================================================
