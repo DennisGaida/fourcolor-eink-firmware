@@ -36,6 +36,29 @@ services:
     # secrets:
     #   - calendar_source_secret
     #   - ha_token
+    #
+    # Reverse proxy (e.g. Traefik) via Docker labels/service discovery:
+    # the container must be explicitly attached to the proxy's Docker
+    # network, not just labeled for it - Traefik resolves the container's
+    # IP via the Docker API regardless, but can't route to it unless
+    # they share a network, and silently 502/504s instead of erroring
+    # loudly. Uncomment both this network attachment and the block below,
+    # substituting the proxy network's real (Compose-project-prefixed)
+    # name from `docker network ls`:
+    # networks:
+    #   - default
+    #   - traefik_proxy
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.docker.network=traefik_proxy"
+    #   - "traefik.http.routers.busylight-svc.rule=Host(`busylight.example.invalid`)"
+    #   - "traefik.http.services.busylight-svc.loadbalancer.server.port=8080"
+
+# networks:
+#   default: {}
+#   traefik_proxy:
+#     external: true
+#     name: <real_traefik_network_name>  # from `docker network ls`
 
 # secrets:
 #   calendar_source_secret:
