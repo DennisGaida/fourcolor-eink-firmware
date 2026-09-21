@@ -38,6 +38,22 @@ static constexpr int kFastConnectTimeoutMs = 2000;
 static constexpr int kFastFailThreshold = 3;
 static constexpr int64_t kIpFastMaxAgeMs = 60LL * 60 * 1000;
 static constexpr int kIpFastTotalBudgetMs = 900;
+
+// CONFIG_DEVICE_HOSTNAME (Kconfig "Deployment defaults") must be a valid DNS
+// label - letters/digits/hyphens only, not leading/trailing with a hyphen -
+// or esp_netif_set_hostname() below is skipped and the device keeps
+// ESP-IDF's own CONFIG_LWIP_LOCAL_HOSTNAME default ("espressif") rather than
+// risking a malformed DHCP client hostname.
+static bool IsValidHostname(const char* hostname) {
+    size_t len = strlen(hostname);
+    if (len == 0 || len > 63) return false;
+    if (hostname[0] == '-' || hostname[len - 1] == '-') return false;
+    for (size_t i = 0; i < len; ++i) {
+        const unsigned char c = static_cast<unsigned char>(hostname[i]);
+        if (!std::isalnum(c) && c != '-') return false;
+    }
+    return true;
+}
 static constexpr int kIpFastArpBudgetMs = 120;
 static constexpr int kIpFastGwBudgetMs = 200;
 static constexpr int kIpFastDnsBudgetMs = 200;
@@ -777,6 +793,12 @@ void WifiStation::Start() {
     
     // Create the default WiFi station interface
     station_netif_ = esp_netif_create_default_wifi_sta();
+    if (IsValidHostname(CONFIG_DEVICE_HOSTNAME)) {
+        esp_netif_set_hostname(station_netif_, CONFIG_DEVICE_HOSTNAME);
+    } else if (CONFIG_DEVICE_HOSTNAME[0] != '\0') {
+        ESP_LOGW(TAG, "Ignoring invalid CONFIG_DEVICE_HOSTNAME '%s' - keeping ESP-IDF's default hostname",
+                 CONFIG_DEVICE_HOSTNAME);
+    }
     int64_t t_ms = esp_timer_get_time() / 1000;
     ESP_LOGI(FAST_RC_TAG, "stage=wifi event=station_start path=slow t_ms=%lld fast_enable=%d",
              static_cast<long long>(t_ms), kFastRcEnable ? 1 : 0);

@@ -63,6 +63,19 @@ config BUSY_LIGHT_DEBUG_CYCLE
 # in one place.
 menu "Deployment defaults"
 
+    config DEVICE_HOSTNAME
+        string "Device network hostname"
+        default "fourcolor-eink-display"
+        help
+            Hostname this device advertises on the network - set on the
+            WiFi station netif via esp_netif_set_hostname() once the
+            station interface is created (WifiStation::Start()), replacing
+            ESP-IDF's own CONFIG_LWIP_LOCAL_HOSTNAME default ("espressif").
+            Shows up as the DHCP client hostname on your router's device
+            list. Must be a valid DNS label (letters, digits, hyphens; no
+            spaces/underscores) - invalid values are left as ESP-IDF's
+            "espressif" default rather than risking a broken DHCP request.
+
     config PRESENCE_BRIDGE_ENDPOINT
         string "Presence/calendar bridge base URL"
         default ""
