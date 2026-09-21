@@ -269,7 +269,7 @@ void WeatherRenderer::Render(uint8_t* fb, int width, int height) {
     snprintf(lo_buf, sizeof(lo_buf), "LO %d\xc2\xb0", static_cast<int>(current_data_.temp_min_today));
     DrawText(fb, width, right_column_x, hilo_y, hi_buf, title_font_, RED);
     const int hi_w = MeasureTextWidth(hi_buf, title_font_);
-    DrawText(fb, width, right_column_x + hi_w + 16, hilo_y, lo_buf, title_font_, text);
+    DrawText(fb, width, right_column_x + hi_w + 8, hilo_y, lo_buf, title_font_, text);
 
     // Divider sits below whichever block (icon or heading/date/hi-lo) runs
     // lower, with enough clearance that it doesn't crowd the HI/LO line.
