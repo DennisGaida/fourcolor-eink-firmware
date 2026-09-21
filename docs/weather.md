@@ -162,3 +162,11 @@ directly (gitignored — never commit a real key/location to
   regardless of font metrics.
 - **Forecast cards**: day label (bold) + icon on the left, HI (red) / LO
   stacked on the right, per card.
+
+## Status bar widget (shown on other pages)
+
+While Weather is *not* the active page, `WeatherRenderer` still contributes
+a compact icon + temperature glimpse into the shared OS status bar (in the
+gap between the clock/battery and the page title) — see
+[`status-bar-widgets.md`](status-bar-widgets.md) for the general mechanism
+and this widget's specifics.

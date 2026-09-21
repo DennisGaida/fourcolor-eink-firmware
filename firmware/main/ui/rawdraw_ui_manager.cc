@@ -1036,6 +1036,32 @@ void RawDrawUiManager::DrawStatusBar(uint8_t* fb, int width, int height) {
     DrawMiniTimeText(fb, width, right_x - clock_w, center_y - 5, time_str, accent_style.fg);
     right_x = right_x - clock_w - 6;
 
+    // Let inactive modules contribute a small always-on widget in the gap
+    // between the clock/battery and the page title (e.g. a weather icon +
+    // temperature shown while BusyLight is active, or a busy-light camera +
+    // MEETING/FREE word shown while some other page is active). Modules
+    // keep receiving data updates regardless of which page is active, so
+    // their renderer instances always hold fresh state to draw here. Each
+    // widget that draws something shrinks the remaining budget for the next
+    // one, so multiple inactive modules can coexist without overlapping.
+    constexpr int kStatusWidgetMaxW = 70;
+    constexpr int kStatusWidgetGap = 10;
+    int status_widget_budget = kStatusWidgetMaxW;
+    if (weather_renderer_ && current_page_ != RawDrawPageId::Weather) {
+        const int widget_w = weather_renderer_->RenderStatusBarWidget(
+            fb, width, right_x, center_y, status_widget_budget);
+        if (widget_w > 0) {
+            right_x -= widget_w + kStatusWidgetGap;
+        }
+    }
+    if (busy_light_renderer_ && current_page_ != RawDrawPageId::BusyLight) {
+        const int widget_w = busy_light_renderer_->RenderStatusBarWidget(
+            fb, width, right_x, center_y, status_widget_budget);
+        if (widget_w > 0) {
+            right_x -= widget_w + kStatusWidgetGap;
+        }
+    }
+
     const char* title = !status_bar_data_.central_text.empty()
         ? status_bar_data_.central_text.c_str()
         : status_bar_data_.page_title.c_str();

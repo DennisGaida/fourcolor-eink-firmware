@@ -377,4 +377,32 @@ void WeatherRenderer::Update(const WeatherData& data) {
     needs_full_refresh_ = true;
 }
 
+int WeatherRenderer::RenderStatusBarWidget(uint8_t* fb, int width, int right_edge_x,
+                                           int center_y, int max_w) {
+    if (!fb || !has_data_) return 0;
+
+    const Color text = ThemeManager::Get().ColorFor(ThemeToken::TextPrimary);
+
+    const WeatherIcon icon = WeatherIconForCode(current_data_.condition_code);
+    const char* icon_glyph = IconGlyphFor(icon);
+    const int icon_w = MeasureTextWidth(icon_glyph, &weather_icons_v2_16);
+
+    char temp_buf[8];
+    snprintf(temp_buf, sizeof(temp_buf), "%d\xc2\xb0", static_cast<int>(current_data_.temp));
+    const int temp_w = MeasureTextWidth(temp_buf, font_);
+
+    constexpr int kIconTempGap = 3;
+    const int total_w = icon_w + kIconTempGap + temp_w;
+    if (total_w <= 0 || total_w > max_w) return 0;
+
+    const int temp_x = right_edge_x - temp_w;
+    const int icon_x = temp_x - kIconTempGap - icon_w;
+
+    DrawWeatherIcon(fb, width, icon_x, InkCenteredTextTopY(&weather_icons_v2_16, icon_glyph, center_y),
+                    icon, &weather_icons_v2_16, text);
+    DrawText(fb, width, temp_x, InkCenteredTextTopY(font_, temp_buf, center_y), temp_buf, font_, text);
+
+    return total_w;
+}
+
 }  // namespace rawdraw

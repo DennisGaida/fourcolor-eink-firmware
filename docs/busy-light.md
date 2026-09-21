@@ -168,3 +168,11 @@ An eighth region only appears conditionally, so it's shown separately:
 ## Not yet built
 
 - `participants`/`participant_count` are carried in the contract but not surfaced anywhere in the UI.
+
+## Status bar widget (shown on other pages)
+
+While BusyLight is *not* the active page, `BusyLightRenderer` still
+contributes a compact camera-state + MEETING/FREE word glimpse into the
+shared OS status bar (in the gap between the clock/battery and the page
+title) — see [`status-bar-widgets.md`](status-bar-widgets.md) for the
+general mechanism and this widget's specifics.

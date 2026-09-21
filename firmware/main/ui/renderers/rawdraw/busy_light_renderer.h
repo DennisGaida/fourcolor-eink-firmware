@@ -51,6 +51,12 @@ public:
     // Data interface
     void Update(const PresenceStatus& status);
 
+    // Draws a compact "camera state + MEETING/FREE word" glimpse into the
+    // shared status bar when BusyLight is not the active page. See
+    // PageRenderer for the contract.
+    int RenderStatusBarWidget(uint8_t* fb, int width, int right_edge_x,
+                              int center_y, int max_w) override;
+
     // Change-detection result from the last Update() call: whether anything
     // actually visible changed (vs. an identical poll result redrawing the
     // panel for nothing), and if so, whether it can be satisfied with a

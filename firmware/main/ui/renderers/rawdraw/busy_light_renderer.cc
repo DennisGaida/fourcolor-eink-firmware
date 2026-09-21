@@ -419,8 +419,28 @@ void DrawCameraGlyph(uint8_t* fb, int width, int height, int x, int center_y, bo
         DrawLine(fb, width, {x - 1, icon_y - 4}, {x + kIconW + 1, icon_y + kIconH + 3}, WHITE);
         DrawLine(fb, width, {x - 1, icon_y - 3}, {x + kIconW + 1, icon_y + kIconH + 4}, WHITE);
     }
-    const char* label = on ? i18n::Tr(i18n::StringId::kBusyLightCamOn) : i18n::Tr(i18n::StringId::kBusyLightCamOff);
-    DrawTextBold(fb, width, x + kIconW + kGap, InkCenteredTextTopY(font, label, center_y, 0), label, font, color);
+}
+
+// Same shape/coloring rule as DrawCameraGlyph (solid red when live, the
+// caller's base color when off, plus a diagonal slash overlay when off) but
+// scaled down to icon-only — no text label — for the shared status bar's
+// inactive-module widget slot, which only has ~16px of row height to work
+// with.
+void DrawStatusBarCamIcon(uint8_t* fb, int width, int x, int center_y, bool on, Color base_color) {
+    const Color color = on ? RED : base_color;
+    constexpr int kIconW = 14;
+    constexpr int kIconH = 10;
+    const int icon_y = center_y - kIconH / 2;
+    Rect body{x, icon_y, kIconW, kIconH};
+    DrawRoundRect(fb, width, body, 1, color, color, 1);
+    Rect bump{x + kIconW - 6, icon_y - 3, 4, 4};
+    DrawRect(fb, width, bump, color);
+    const Point lens_c{x + kIconW / 2 - 1, icon_y + kIconH / 2};
+    DrawCircle(fb, width, lens_c, 3, WHITE);
+    DrawCircleBorder(fb, width, lens_c, 3, 1, color);
+    if (!on) {
+        DrawLine(fb, width, {x - 1, icon_y - 3}, {x + kIconW + 1, icon_y + kIconH + 2}, WHITE);
+    }
 }
 
 // Yellow-fill "highlight chip" behind bold black text, matching the
@@ -1153,6 +1173,59 @@ void BusyLightRenderer::Update(const PresenceStatus& status) {
     last_past_event_count_ = time_sig.past_event_count;
     last_tomorrow_banner_visible_ = time_sig.tomorrow_banner_visible;
     has_rendered_once_ = true;
+}
+
+int BusyLightRenderer::RenderStatusBarWidget(uint8_t* fb, int width, int right_edge_x,
+                                             int center_y, int max_w) {
+    if (!fb || !current_.valid) return 0;
+
+    // Same effective-status derivation as RenderDefaultFace's header (solo
+    // blocks read as free, an ad-hoc call/webcam/screen-share with nothing
+    // on the calendar reads as busy, debug cycle overrides when enabled) so
+    // this widget never disagrees with what the BusyLight page itself would
+    // show right now.
+    const int now_minutes = CurrentLocalMinutes();
+    const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
+    bool calendar_busy = real_active != nullptr;
+    PresenceEventTier calendar_tier = real_active ? real_active->tier : PresenceEventTier::kInternal;
+    if (real_active && real_active->tier == PresenceEventTier::kSolo) {
+        calendar_busy = false;
+        calendar_tier = PresenceEventTier::kInternal;
+    }
+    bool webcam_active = current_.webcam_active;
+    bool presenting = current_.presenting;
+#if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    calendar_busy = DebugTierIsBusy(debug_tier_);
+    calendar_tier = DebugTierToPresenceTier(debug_tier_);
+    webcam_active = kDebugAvStates[debug_av_index_].cam;
+    presenting = kDebugAvStates[debug_av_index_].presenting;
+#endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
+    const EffectiveStatus status = ComputeEffectiveStatus(
+        calendar_busy, calendar_tier, current_.in_call, webcam_active, presenting);
+
+    // Word color follows the same "elevated" rule as the default face's top
+    // status band (RED for leadership/customer/ad-hoc/presenting, default
+    // text color otherwise) — the same coloring, just carried by text here
+    // instead of a fill band.
+    const auto& theme = ThemeManager::Get();
+    const Color word_color = status.band_elevated ? RED : theme.ColorFor(ThemeToken::TextPrimary);
+    const char* word = status.busy ? i18n::Tr(i18n::StringId::kBusyLightMeeting)
+                                   : i18n::Tr(i18n::StringId::kBusyLightFree);
+    // +1 to match DrawTextBold's 1px double-strike widening.
+    const int word_w = MeasureTextWidth(word, font_) + 1;
+
+    constexpr int kCamIconW = 14;
+    constexpr int kGap = 5;
+    const int total_w = kCamIconW + kGap + word_w;
+    if (total_w <= 0 || total_w > max_w) return 0;
+
+    const int word_x = right_edge_x - word_w;
+    const int cam_x = word_x - kGap - kCamIconW;
+
+    DrawStatusBarCamIcon(fb, width, cam_x, center_y, webcam_active, theme.ColorFor(ThemeToken::TextSecondary));
+    DrawTextBold(fb, width, word_x, InkCenteredTextTopY(font_, word, center_y, 0), word, font_, word_color);
+
+    return total_w;
 }
 
 }  // namespace rawdraw

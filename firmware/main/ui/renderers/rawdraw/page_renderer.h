@@ -96,6 +96,28 @@ public:
     virtual void BeginStream() {}
     virtual void EndStream() {}
 
+    /**
+     * @brief Optional: contribute a small always-on summary to the shared
+     * status bar while this page is NOT the active/rendered one (e.g. a
+     * weather icon + temperature shown while BusyLight is active).
+     *
+     * Modules keep receiving data updates regardless of which page is
+     * active, so this lets an inactive module surface a minimal glimpse of
+     * its state in the space between the clock/battery and the page title.
+     *
+     * Implementations should draw right-aligned, ending at @p right_edge_x,
+     * vertically centered on @p center_y, using no more than @p max_w
+     * pixels, and must draw nothing (returning 0) if they have no useful
+     * content or don't fit within @p max_w.
+     *
+     * @return width in pixels actually consumed (0 if nothing was drawn)
+     */
+    virtual int RenderStatusBarWidget(uint8_t* fb, int width, int right_edge_x,
+                                      int center_y, int max_w) {
+        (void)fb; (void)width; (void)right_edge_x; (void)center_y; (void)max_w;
+        return 0;
+    }
+
 protected:
     int width_ = 0;
     int height_ = 0;

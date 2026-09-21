@@ -40,6 +40,14 @@ jobs:
       # "X.Y.Z-N-gHASH" dev suffix. Mirrors the same approach already used
       # for the bridge image in build-bridge.yml, restricted to firmware/
       # instead of server/ and using an unprefixed "v" tag namespace.
+      #
+      # NOTE: all `run:` steps in this job execute with cwd already inside
+      # firmware/ (see the job-level `defaults.run.working-directory`
+      # above) - the `git log ... -- firmware/` pathspec below must NOT
+      # repeat "firmware/" or it resolves to the nonexistent
+      # firmware/firmware/ and silently matches nothing. This previously
+      # caused every run to compute "Bump: none" regardless of how many
+      # feat:/fix: commits had actually landed, leaving the version stuck.
       - name: Compute next version from Conventional Commits
         id: version
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
@@ -49,8 +57,8 @@ jobs:
           LAST_TAG=$(git tag --list "v[0-9]*" --sort=-v:refname | head -n1 || true)
 
           if [ -z "$LAST_TAG" ]; then
-            echo "No previous vX.Y.Z tag found - bootstrapping at 0.1.0"
-            NEW_VERSION="0.1.0"
+            echo "No previous vX.Y.Z tag found - bootstrapping at 1.0.0"
+            NEW_VERSION="1.0.0"
             BUMP="initial"
           else
             LAST_VERSION="${LAST_TAG#v}"
@@ -58,7 +66,7 @@ jobs:
 
             # 0=none 1=patch 2=minor 3=major
             BUMP_LEVEL=0
-            COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%H' -- firmware/)
+            COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%H' -- .)
             for sha in $COMMITS; do
               MSG=$(git log -1 --format='%B' "$sha")
               if echo "$MSG" | grep -qE '^[a-zA-Z]+(\([^)]*\))?!:' || echo "$MSG" | grep -q 'BREAKING CHANGE:'; then

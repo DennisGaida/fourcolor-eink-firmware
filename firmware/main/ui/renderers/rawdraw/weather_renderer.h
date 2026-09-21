@@ -25,6 +25,12 @@ public:
     void Render(uint8_t* fb, int width, int height) override;
     bool HandleInput(const ButtonEvent& event) override;
 
+    // Draws a compact "icon + temperature" glimpse into the shared status
+    // bar when Weather is not the active page. See PageRenderer for the
+    // contract.
+    int RenderStatusBarWidget(uint8_t* fb, int width, int right_edge_x,
+                              int center_y, int max_w) override;
+
     // Data interface
     // Pushes freshly fetched data into the renderer (see weather_api.h).
     void Update(const WeatherData& data);
