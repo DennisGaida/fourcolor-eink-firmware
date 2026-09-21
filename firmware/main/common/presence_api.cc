@@ -3,9 +3,11 @@
  * @brief Presence bridge API client implementation
  *
  * Mirrors weather_api.cc's structure: static file-scope state, esp_http_client
- * GET, cJSON parse, esp_timer periodic refresh. Two timers instead of one —
- * see presence_api.h and server/mock_presence_server.py for why the contract
- * is split into /calendar/today (slow) and /live (fast). On fetch failure or
+ * GET, cJSON parse, a dedicated fetch task (HTTPS needs more stack than the
+ * esp_timer task or an event-loop callback can spare), esp_timer periodic
+ * refresh. Two timers instead of one — see presence_api.h and
+ * server/mock_presence_server.py for why the contract is split into
+ * /calendar/today (slow) and /live (fast). On fetch failure or
  * malformed/partial response, keeps last-known-good data instead of blanking.
  */
 
@@ -15,7 +17,10 @@
 
 #include <esp_log.h>
 #include <esp_http_client.h>
+#include <esp_crt_bundle.h>
 #include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include <cJSON.h>
 #include <algorithm>
 #include <cstring>
@@ -32,6 +37,18 @@ static const char* kEndpointKey = "endpoint";
 static constexpr int64_t kLivePollIntervalUs = 90LL * 1000000LL;            // 90s
 static constexpr int64_t kCalendarPollIntervalUs = 20LL * 60LL * 1000000LL;  // 20min
 
+// HTTPS (TLS handshake + X.509 cert-bundle parsing) needs far more stack than
+// the esp_timer task (~3.5KB) or the caller of presence_api_init() (the WiFi
+// event callback, dispatched on esp_event's "sys_evt" task, has an even
+// smaller stack) can spare — see weather_api.cc's FetchTask for the same
+// reasoning. Both fetch timers and presence_api_fetch_now() only post a
+// notification bit; this dedicated task does the actual blocking HTTP work
+// on its own stack.
+constexpr uint32_t kFetchTaskStackSize = 8192;
+constexpr UBaseType_t kFetchTaskPriority = 4;
+constexpr uint32_t kFetchLiveBit = 1u << 0;
+constexpr uint32_t kFetchCalendarBit = 1u << 1;
+
 // ============================================================
 // Static state
 // ============================================================
@@ -44,6 +61,7 @@ static bool s_calendar_in_progress = false;
 static PresenceStatus s_last_data;
 static esp_timer_handle_t s_live_timer = nullptr;
 static esp_timer_handle_t s_calendar_timer = nullptr;
+static TaskHandle_t s_fetch_task = nullptr;
 
 // ============================================================
 // Time parsing
@@ -271,6 +289,7 @@ static bool HttpGet(const std::string& url) {
     config.event_handler = HttpEventHandler;
     config.timeout_ms = 10000;
     config.disable_auto_redirect = false;
+    config.crt_bundle_attach = esp_crt_bundle_attach;  // HTTPS - use the built-in CA bundle
 
     esp_http_client_handle_t client = esp_http_client_init(&config);
     if (!client) {
@@ -346,6 +365,31 @@ static void DoFetchLive(void* arg) {
     s_live_in_progress = false;
 }
 
+// Timer callbacks run on the shared esp_timer task (small stack) — they must
+// not do the HTTP/TLS work themselves. Just wake the dedicated fetch task.
+static void RequestLiveFetch(void* arg) {
+    (void)arg;
+    if (s_fetch_task) xTaskNotify(s_fetch_task, kFetchLiveBit, eSetBits);
+}
+
+static void RequestCalendarFetch(void* arg) {
+    (void)arg;
+    if (s_fetch_task) xTaskNotify(s_fetch_task, kFetchCalendarBit, eSetBits);
+}
+
+// Dedicated task body: blocks until notified (by a timer, the initial fetch
+// trigger, or presence_api_fetch_now()), then performs whichever fetch(es)
+// were requested on this task's own (large) stack.
+static void FetchTask(void* arg) {
+    (void)arg;
+    for (;;) {
+        uint32_t bits = 0;
+        xTaskNotifyWait(0, ULONG_MAX, &bits, portMAX_DELAY);
+        if (bits & kFetchLiveBit) DoFetchLive(nullptr);
+        if (bits & kFetchCalendarBit) DoFetchCalendar(nullptr);
+    }
+}
+
 // ============================================================
 // Public API
 // ============================================================
@@ -361,7 +405,7 @@ void presence_api_init(const char* endpoint, PresenceCallback callback) {
     s_callback = callback;
 
     esp_timer_create_args_t live_timer_args = {
-        .callback = DoFetchLive,
+        .callback = RequestLiveFetch,
         .arg = nullptr,
         .dispatch_method = ESP_TIMER_TASK,
         .name = "presence_live",
@@ -374,7 +418,7 @@ void presence_api_init(const char* endpoint, PresenceCallback callback) {
     }
 
     esp_timer_create_args_t calendar_timer_args = {
-        .callback = DoFetchCalendar,
+        .callback = RequestCalendarFetch,
         .arg = nullptr,
         .dispatch_method = ESP_TIMER_TASK,
         .name = "presence_calendar",
@@ -388,8 +432,11 @@ void presence_api_init(const char* endpoint, PresenceCallback callback) {
 
     s_initialized = true;
 
-    DoFetchLive(nullptr);
-    DoFetchCalendar(nullptr);
+    xTaskCreate(FetchTask, "presence_fetch", kFetchTaskStackSize, nullptr,
+                kFetchTaskPriority, &s_fetch_task);
+    if (s_fetch_task) {
+        xTaskNotify(s_fetch_task, kFetchLiveBit | kFetchCalendarBit, eSetBits);
+    }
 
     ESP_LOGI(kTag, "Presence API initialized: endpoint=%s (live=%llds, calendar=%llds)",
              s_endpoint.c_str(),
@@ -398,11 +445,10 @@ void presence_api_init(const char* endpoint, PresenceCallback callback) {
 }
 
 bool presence_api_fetch_now() {
-    if (!s_initialized) return false;
+    if (!s_initialized || !s_fetch_task) return false;
     if (s_live_in_progress || s_calendar_in_progress) return false;
 
-    DoFetchLive(nullptr);
-    DoFetchCalendar(nullptr);
+    xTaskNotify(s_fetch_task, kFetchLiveBit | kFetchCalendarBit, eSetBits);
     return true;
 }
 
