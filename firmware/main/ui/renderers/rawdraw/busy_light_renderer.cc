@@ -176,10 +176,15 @@ const PresenceEvent* ActiveEvent(const PresenceStatus& status, int now_minutes) 
     return best;
 }
 
-const PresenceEvent* NextEvent(const PresenceStatus& status, int now_minutes) {
+// skip_solo: the default face treats solo blocks (e.g. "Lunch") as FREE, so
+// its "until next HH:MM" line must look past them to the next event that
+// actually reads as busy — otherwise it'd flicker onto a solo block's own
+// start time and immediately relabel itself FREE again a tick later.
+const PresenceEvent* NextEvent(const PresenceStatus& status, int now_minutes, bool skip_solo = false) {
     const PresenceEvent* next = nullptr;
     for (const auto& ev : status.events) {
         if (ev.start_minutes <= now_minutes) continue;
+        if (skip_solo && ev.tier == PresenceEventTier::kSolo) continue;
         if (!next || ev.start_minutes < next->start_minutes) next = &ev;
     }
     return next;
@@ -730,6 +735,15 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
     const PresenceEvent* real_active = ActiveEvent(current_, now_minutes);
     bool calendar_busy = real_active != nullptr;
     PresenceEventTier calendar_tier = real_active ? real_active->tier : PresenceEventTier::kInternal;
+    // Solo blocks (e.g. "Lunch", personal focus time — nobody else is
+    // involved) read as FREE on this face: word, until-line, and human-line
+    // all fall through to the free-time path below. The detail-face day grid
+    // is untouched — it still draws the block as a real calendar entry.
+    if (real_active && real_active->tier == PresenceEventTier::kSolo) {
+        real_active = nullptr;
+        calendar_busy = false;
+        calendar_tier = PresenceEventTier::kInternal;
+    }
     bool webcam_active = current_.webcam_active;
     bool presenting = current_.presenting;
 #if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
@@ -853,7 +867,7 @@ void BusyLightRenderer::RenderDefaultFace(uint8_t* fb, int width, int height) {
                  static_cast<int>(real_active->end_minutes / 60), static_cast<int>(real_active->end_minutes % 60));
         until_line = buf;
     } else {
-        const PresenceEvent* next = NextEvent(current_, now_minutes);
+        const PresenceEvent* next = NextEvent(current_, now_minutes, /*skip_solo=*/true);
 #if CONFIG_BUSY_LIGHT_DEBUG_CYCLE
         next = &debug_event;
 #endif  // CONFIG_BUSY_LIGHT_DEBUG_CYCLE
