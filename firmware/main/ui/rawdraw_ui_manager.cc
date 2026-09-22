@@ -654,7 +654,11 @@ bool RawDrawUiManager::TryDisplayCurrentPhotoRaw4Color() {
 const std::array<RawDrawUiManager::QuickSwitchItem, 4>& RawDrawUiManager::GetQuickSwitchItems() {
     static const std::array<QuickSwitchItem, 4> kItems = {{
         {RawDrawPageId::BusyLight, FA_SETTINGS_CLOCK},
-        {RawDrawPageId::Weather, nullptr},
+        // Weather sun icon glyph (FontAwesome 6 U+F185) from weather_icons_16
+        // (see weather_icons.h FA_WEATHER_SUN; not included directly here to
+        // avoid a conflicting extern "C" re-declaration of weather_icons_16,
+        // which is already declared via rawdraw/font_engine.h).
+        {RawDrawPageId::Weather, "\xef\x86\x85", &weather_icons_16},
         {RawDrawPageId::Gallery, FA_SETTINGS_IMAGE},
         {RawDrawPageId::Settings, FA_SETTINGS_GEAR},
 #if 0
@@ -1105,15 +1109,17 @@ void RawDrawUiManager::DrawStatusBar(uint8_t* fb, int width, int height) {
         : status_bar_data_.page_title.c_str();
     const int right_safe = std::max(left_safe + 40, right_x - 2);
     const char* title_icon = nullptr;
+    const lv_font_t* title_icon_font = &fa_settings_16;
     for (const auto& item : GetQuickSwitchItems()) {
         if (item.page == current_page_) {
             title_icon = item.icon;
+            title_icon_font = item.icon_font ? item.icon_font : &fa_settings_16;
             break;
         }
     }
     const int title_icon_gap = (title_icon && title_icon[0] != '\0') ? 5 : 0;
     const int title_icon_w = (title_icon && title_icon[0] != '\0')
-        ? MeasureTextWidth(title_icon, &fa_settings_16) : 0;
+        ? MeasureTextWidth(title_icon, title_icon_font) : 0;
     const int title_max_w = std::max(44, right_safe - left_safe);
     const int text_max_w = std::max(20, title_max_w - title_icon_w - title_icon_gap);
     std::string display_title = FitTextToWidth(title, title_font, text_max_w);
@@ -1141,8 +1147,8 @@ void RawDrawUiManager::DrawStatusBar(uint8_t* fb, int width, int height) {
     }
     int title_text_x = title_x;
     if (title_icon_w > 0) {
-        const int icon_y = rawdraw::InkCenteredTextTopYInBox(&fa_settings_16, title_icon, 0, bar_height, 0);
-        DrawStyledText(fb, width, title_x, icon_y, title_icon, &fa_settings_16, text_style, height);
+        const int icon_y = rawdraw::InkCenteredTextTopYInBox(title_icon_font, title_icon, 0, bar_height, 0);
+        DrawStyledText(fb, width, title_x, icon_y, title_icon, title_icon_font, text_style, height);
         title_text_x += title_icon_w + title_icon_gap;
     }
     DrawStyledText(fb, width, title_text_x, title_y, display_title.c_str(), title_font, text_style);
@@ -1250,7 +1256,7 @@ void RawDrawUiManager::DrawQuickSwitchOverlay(uint8_t* fb, int width, int height
                                          Style::kBorderRadiusMD, row_style);
         }
         // Draw icon (if present) + label
-        const lv_font_t* icon_font = &fa_settings_16;
+        const lv_font_t* icon_font = items[i].icon_font ? items[i].icon_font : &fa_settings_16;
         const int icon_gap = 6;
         const int text_start_x = row_x + 18;
         const rawdraw::Color text_color = row_style.fg;

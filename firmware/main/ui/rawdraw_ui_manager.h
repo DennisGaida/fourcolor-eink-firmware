@@ -387,6 +387,11 @@ private:
     struct QuickSwitchItem {
         RawDrawPageId page;
         const char* icon;  // UTF-8 icon string (FontAwesome codepoint)
+        // Font the icon glyph is drawn with. Most icons live in
+        // fa_settings_16; nullptr means "use fa_settings_16" so existing
+        // entries don't need to be touched. Icons from other icon fonts
+        // (e.g. the weather sun glyph) set this explicitly.
+        const lv_font_t* icon_font = nullptr;
         // Label is intentionally not stored here: it is looked up via
         // GetPageTitle(page) at render time so a runtime language switch
         // (see i18n.h) is reflected immediately instead of being frozen at
