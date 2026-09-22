@@ -6,6 +6,7 @@
 #include "common/photo_storage.h"
 #include "common/presence_api.h"
 #include "common/weather_api.h"
+#include "common/serial_control.h"
 #include "display.h"
 #include "i18n.h"
 #include "settings.h"
@@ -296,6 +297,27 @@ void Application::Initialize() {
             lcd->RequestUrgentRefresh();
         }
     });
+
+    // Serial (COM port) debug control: same screenshot/button/page
+    // operations as the LAN /screenshot, /button, /page endpoints, but over
+    // the always-available console UART — useful when the LAN HTTP server
+    // is disabled (see docs/serial-control.md).
+    serial_control::SetCallbacks(
+        [this]() -> serial_control::ScreenshotSnapshot {
+            serial_control::ScreenshotSnapshot snap;
+            if (!rawdraw_ui_manager_) return snap;
+            auto fb = rawdraw_ui_manager_->CaptureFramebufferSnapshot();
+            snap.width = fb.width;
+            snap.height = fb.height;
+            snap.data = std::move(fb.data);
+            return snap;
+        },
+        [this](const std::string& type) {
+            if (rawdraw_ui_manager_) rawdraw_ui_manager_->InjectButtonEvent(type);
+        },
+        [this](const std::string& name) -> bool {
+            return rawdraw_ui_manager_ ? rawdraw_ui_manager_->SwitchToPageByName(name) : false;
+        });
 
     if (auto* sr = rawdraw_ui_manager_->GetSettingsRenderer()) {
         Settings gallery_nvs(kGalleryNamespace, false);

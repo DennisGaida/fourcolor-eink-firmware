@@ -190,6 +190,30 @@ public:
     void StopLanHttpServer();
 
     /**
+     * @brief Capture the current framebuffer for debug/remote screenshotting.
+     *
+     * Shared by the LAN /screenshot HTTP endpoint and the serial control
+     * interface so both stay in sync with a single capture implementation.
+     */
+    rawdraw::ApTransferServer::FramebufferSnapshot CaptureFramebufferSnapshot();
+
+    /**
+     * @brief Inject a synthetic button event by name (e.g. "boot_click",
+     * "up_long_press") — shared by the /button HTTP endpoint and the serial
+     * control interface. Unknown names are logged and ignored.
+     */
+    void InjectButtonEvent(const std::string& type);
+
+    /**
+     * @brief Jump directly to a page by name (e.g. "busylight", "weather",
+     * "gallery", "settings") — shared by the /page HTTP endpoint and the
+     * serial control interface.
+     *
+     * @return true if the name was recognized and the page switch happened.
+     */
+    bool SwitchToPageByName(const std::string& name);
+
+    /**
      * @brief Render everything to the framebuffer
      *
      * Draws the status bar at the top, then calls the active page

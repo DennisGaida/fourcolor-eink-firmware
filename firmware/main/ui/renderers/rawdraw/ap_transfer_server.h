@@ -82,6 +82,11 @@ public:
     // physical board — see server/press_button.py.
     void SetButtonInjectCallback(std::function<void(const std::string& type)> callback);
 
+    // Debug/dev only: jump directly to a named page over HTTP (?id=busylight,
+    // weather, gallery, settings) — see server/press_button.py / docs for the
+    // full name list. Callback returns false for an unrecognized name.
+    void SetPageChangeCallback(std::function<bool(const std::string& name)> callback);
+
 private:
     enum class TransferMode {
         kNone,
@@ -104,6 +109,7 @@ private:
     std::function<bool(const std::string& photo_id)> show_photo_callback_;
     std::function<FramebufferSnapshot()> screenshot_callback_;
     std::function<void(const std::string& type)> button_inject_callback_;
+    std::function<bool(const std::string& name)> page_change_callback_;
 
     bool StartAccessPoint();
     const std::string& GetApIp() const { return ap_ip_; }
@@ -122,6 +128,7 @@ private:
     static esp_err_t PhotoShowHandler(httpd_req_t* req);
     static esp_err_t ScreenshotHandler(httpd_req_t* req);
     static esp_err_t ButtonHandler(httpd_req_t* req);
+    static esp_err_t PageHandler(httpd_req_t* req);
 
     // Notify state change
     void NotifyState(ServerState state, const std::string& message);

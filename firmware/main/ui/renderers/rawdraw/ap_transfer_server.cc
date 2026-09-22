@@ -633,6 +633,14 @@ bool ApTransferServer::StartHttpServer() {
     };
     if (httpd_register_uri_handler(server_, &button_uri) != ESP_OK) return false;
 
+    httpd_uri_t page_uri = {
+        .uri = "/page",
+        .method = HTTP_GET,
+        .handler = PageHandler,
+        .user_ctx = this
+    };
+    if (httpd_register_uri_handler(server_, &page_uri) != ESP_OK) return false;
+
     ESP_LOGI(kTag, "HTTP server started at http://%s/", ap_ip_.c_str());
     return true;
 }
@@ -1082,6 +1090,10 @@ void ApTransferServer::SetButtonInjectCallback(std::function<void(const std::str
     button_inject_callback_ = std::move(callback);
 }
 
+void ApTransferServer::SetPageChangeCallback(std::function<bool(const std::string&)> callback) {
+    page_change_callback_ = std::move(callback);
+}
+
 esp_err_t ApTransferServer::ButtonHandler(httpd_req_t* req) {
     auto* self = static_cast<ApTransferServer*>(req->user_ctx);
 
@@ -1102,6 +1114,32 @@ esp_err_t ApTransferServer::ButtonHandler(httpd_req_t* req) {
     httpd_resp_set_hdr(req, "Connection", "close");
     static const char kBody[] = "{\"ok\":true}";
     return httpd_resp_send(req, kBody, sizeof(kBody) - 1);
+}
+
+esp_err_t ApTransferServer::PageHandler(httpd_req_t* req) {
+    auto* self = static_cast<ApTransferServer*>(req->user_ctx);
+
+    char query[32] = {};
+    char id[24] = {};
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        httpd_query_key_value(query, "id", id, sizeof(id));
+    }
+
+    if (!self || !self->page_change_callback_ || id[0] == '\0') {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing ?id= or handler unavailable");
+        return ESP_FAIL;
+    }
+
+    const bool ok = self->page_change_callback_(id);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    char body[48];
+    snprintf(body, sizeof(body), "{\"ok\":%s}", ok ? "true" : "false");
+    if (!ok) {
+        httpd_resp_set_status(req, "400 Bad Request");
+    }
+    return httpd_resp_send(req, body, strlen(body));
 }
 
 }  // namespace rawdraw

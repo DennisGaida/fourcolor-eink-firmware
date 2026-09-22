@@ -62,6 +62,7 @@ set(SOURCES
     "common/ble_gatt_service.cc"
     "common/ble_image_receiver.cc"
     "common/holiday_fetcher.cc"
+    "common/serial_control.cc"
     "ui/renderers/rawdraw/settings_renderer.cc"
     "ui/renderers/rawdraw/wifi_renderer.cc"
     "ui/renderers/rawdraw/weather_renderer.cc"
@@ -102,6 +103,8 @@ idf_component_register(
         spi_flash
         efuse
         driver
+        esp_driver_uart
+        esp_driver_usb_serial_jtag
         esp_wifi
         bt
         nvs_flash

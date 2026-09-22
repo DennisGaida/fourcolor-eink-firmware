@@ -322,41 +322,17 @@ RawDrawUiManager::RawDrawUiManager()
         return ShowPhotoById(photo_id);
     });
     ap_transfer_server_->SetScreenshotCallback([this]() -> rawdraw::ApTransferServer::FramebufferSnapshot {
-        rawdraw::ApTransferServer::FramebufferSnapshot snap;
-        if (!lcd_) return snap;
-        auto* fb = lcd_->GetFramebuffer();
-        if (!fb) return snap;
-        snap.width = width_;
-        snap.height = height_;
-        const size_t bytes_per_row = (static_cast<size_t>(width_) * 2 + 7) / 8;
-        const size_t total_bytes = bytes_per_row * static_cast<size_t>(height_);
-        snap.data.resize(total_bytes);
-        auto* mutex = lcd_->GetMutex();
-        if (mutex) xSemaphoreTake(mutex, portMAX_DELAY);
-        memcpy(snap.data.data(), fb, total_bytes);
-        if (mutex) xSemaphoreGive(mutex);
-        return snap;
+        return CaptureFramebufferSnapshot();
     });
 
     ap_transfer_server_->SetButtonInjectCallback([this](const std::string& type) {
-        static const std::unordered_map<std::string, rawdraw::ButtonEvent::Type> kTypes = {
-            {"boot_click", rawdraw::ButtonEvent::kBootClick},
-            {"boot_double_click", rawdraw::ButtonEvent::kBootDoubleClick},
-            {"boot_long_press", rawdraw::ButtonEvent::kBootLongPress},
-            {"up_click", rawdraw::ButtonEvent::kUpClick},
-            {"up_double_click", rawdraw::ButtonEvent::kUpDoubleClick},
-            {"up_long_press", rawdraw::ButtonEvent::kUpLongPress},
-            {"down_click", rawdraw::ButtonEvent::kDownClick},
-            {"down_double_click", rawdraw::ButtonEvent::kDownDoubleClick},
-            {"down_long_press", rawdraw::ButtonEvent::kDownLongPress},
-        };
-        auto it = kTypes.find(type);
-        if (it == kTypes.end()) {
-            ESP_LOGW(kTag, "Unknown injected button type: %s", type.c_str());
-            return;
-        }
-        HandleInput({it->second});
+        InjectButtonEvent(type);
     });
+
+    ap_transfer_server_->SetPageChangeCallback([this](const std::string& name) {
+        return SwitchToPageByName(name);
+    });
+
 
     // Initialize status bar defaults
     status_bar_data_.page_title = GetPageTitle(RawDrawPageId::BusyLight);
@@ -734,6 +710,64 @@ void RawDrawUiManager::StopLanHttpServer() {
     if (ap_transfer_server_ && ap_transfer_server_->IsLanMode()) {
         ap_transfer_server_->Stop();
     }
+}
+
+rawdraw::ApTransferServer::FramebufferSnapshot RawDrawUiManager::CaptureFramebufferSnapshot() {
+    rawdraw::ApTransferServer::FramebufferSnapshot snap;
+    if (!lcd_) return snap;
+    auto* fb = lcd_->GetFramebuffer();
+    if (!fb) return snap;
+    snap.width = width_;
+    snap.height = height_;
+    const size_t bytes_per_row = (static_cast<size_t>(width_) * 2 + 7) / 8;
+    const size_t total_bytes = bytes_per_row * static_cast<size_t>(height_);
+    snap.data.resize(total_bytes);
+    auto* mutex = lcd_->GetMutex();
+    if (mutex) xSemaphoreTake(mutex, portMAX_DELAY);
+    memcpy(snap.data.data(), fb, total_bytes);
+    if (mutex) xSemaphoreGive(mutex);
+    return snap;
+}
+
+void RawDrawUiManager::InjectButtonEvent(const std::string& type) {
+    static const std::unordered_map<std::string, rawdraw::ButtonEvent::Type> kTypes = {
+        {"boot_click", rawdraw::ButtonEvent::kBootClick},
+        {"boot_double_click", rawdraw::ButtonEvent::kBootDoubleClick},
+        {"boot_long_press", rawdraw::ButtonEvent::kBootLongPress},
+        {"up_click", rawdraw::ButtonEvent::kUpClick},
+        {"up_double_click", rawdraw::ButtonEvent::kUpDoubleClick},
+        {"up_long_press", rawdraw::ButtonEvent::kUpLongPress},
+        {"down_click", rawdraw::ButtonEvent::kDownClick},
+        {"down_double_click", rawdraw::ButtonEvent::kDownDoubleClick},
+        {"down_long_press", rawdraw::ButtonEvent::kDownLongPress},
+    };
+    auto it = kTypes.find(type);
+    if (it == kTypes.end()) {
+        ESP_LOGW(kTag, "Unknown injected button type: %s", type.c_str());
+        return;
+    }
+    HandleInput({it->second});
+}
+
+bool RawDrawUiManager::SwitchToPageByName(const std::string& name) {
+    // Only the pages a user can actually reach via the quick-switch modal
+    // are exposed here — hardware calibration pages (FontDebug/FontMetrics)
+    // and transient flows (Wifi/APTransfer/PhotoDetail) are intentionally
+    // left out of remote control.
+    static const std::unordered_map<std::string, RawDrawPageId> kPages = {
+        {"busylight", RawDrawPageId::BusyLight},
+        {"busy_light", RawDrawPageId::BusyLight},
+        {"weather", RawDrawPageId::Weather},
+        {"gallery", RawDrawPageId::Gallery},
+        {"settings", RawDrawPageId::Settings},
+    };
+    auto it = kPages.find(name);
+    if (it == kPages.end()) {
+        ESP_LOGW(kTag, "Unknown page name for remote switch: %s", name.c_str());
+        return false;
+    }
+    SwitchPage(it->second);
+    return true;
 }
 
 // ============================================================

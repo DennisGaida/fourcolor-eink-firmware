@@ -13,6 +13,7 @@
 
 #include "application.h"
 #include "system_info.h"
+#include "common/serial_control.h"
 
 #define TAG "main"
 
@@ -55,6 +56,12 @@ static void LogNvsStats() {
 
 extern "C" void app_main(void)
 {
+    // Must run before anything else logs a single line: switching the
+    // console UART to the interrupt-driven driver races with concurrent
+    // ESP_LOG writers and can wedge the peripheral if done any later (see
+    // serial_control.h). This is the sole reason it's first in app_main.
+    serial_control::InitUartEarly();
+
     // Bootloader app-rollback is enabled (ota_0/ota_1), which boots each new
     // image in the "pending verify" state and reverts to the previous slot
     // after enough reboots unless something marks it valid. Nothing else in
