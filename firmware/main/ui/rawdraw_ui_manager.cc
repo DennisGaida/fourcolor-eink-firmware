@@ -1078,17 +1078,21 @@ void RawDrawUiManager::DrawStatusBar(uint8_t* fb, int width, int height) {
     // their renderer instances always hold fresh state to draw here. Each
     // widget that draws something shrinks the remaining budget for the next
     // one, so multiple inactive modules can coexist without overlapping.
+    // Settings is deliberately excluded: it's a special, focused screen
+    // (device config, not a "page" a module is competing to be seen from)
+    // and should never be decorated with other modules' widgets.
     constexpr int kStatusWidgetMaxW = 70;
     constexpr int kStatusWidgetGap = 10;
     int status_widget_budget = kStatusWidgetMaxW;
-    if (weather_renderer_ && current_page_ != RawDrawPageId::Weather) {
+    const bool allow_status_widgets = current_page_ != RawDrawPageId::Settings;
+    if (allow_status_widgets && weather_renderer_ && current_page_ != RawDrawPageId::Weather) {
         const int widget_w = weather_renderer_->RenderStatusBarWidget(
             fb, width, right_x, center_y, status_widget_budget);
         if (widget_w > 0) {
             right_x -= widget_w + kStatusWidgetGap;
         }
     }
-    if (busy_light_renderer_ && current_page_ != RawDrawPageId::BusyLight) {
+    if (allow_status_widgets && busy_light_renderer_ && current_page_ != RawDrawPageId::BusyLight) {
         const int widget_w = busy_light_renderer_->RenderStatusBarWidget(
             fb, width, right_x, center_y, status_widget_budget);
         if (widget_w > 0) {
