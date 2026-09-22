@@ -430,7 +430,13 @@ void DrawStatusBarCamIcon(uint8_t* fb, int width, int x, int center_y, bool on, 
     const Color color = on ? RED : base_color;
     constexpr int kIconW = 14;
     constexpr int kIconH = 10;
-    const int icon_y = center_y - kIconH / 2;
+    // The viewfinder bump above the body (see below) has no counterpart
+    // below the body, so centering the body alone on center_y leaves the
+    // icon's actual visual (ink) bounding box sitting a couple pixels above
+    // center_y — noticeable next to the word text, which IS ink-centered
+    // (see InkCenteredTextTopY at the call site). +2 nudges the body down
+    // so the bump-to-body visual center lands on center_y instead.
+    const int icon_y = center_y - kIconH / 2 + 2;
     Rect body{x, icon_y, kIconW, kIconH};
     DrawRoundRect(fb, width, body, 1, color, color, 1);
     Rect bump{x + kIconW - 6, icon_y - 3, 4, 4};
