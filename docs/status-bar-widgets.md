@@ -44,19 +44,22 @@ virtual int RenderStatusBarWidget(uint8_t* fb, int width, int right_edge_x,
 `RawDrawUiManager::DrawStatusBar()` calls this on every module renderer
 **except** the currently-active one, right after laying out the clock and
 battery (i.e. in the gap between the clock/battery and the centered page
-title):
+title). The Settings page is excluded entirely — it's a special, focused
+configuration screen, not a "page" any module should be competing to be
+seen from:
 
 ```cpp
 // rawdraw_ui_manager.cc, inside DrawStatusBar()
 constexpr int kStatusWidgetMaxW = 70;
 constexpr int kStatusWidgetGap = 10;
 int status_widget_budget = kStatusWidgetMaxW;
-if (weather_renderer_ && current_page_ != RawDrawPageId::Weather) {
+const bool allow_status_widgets = current_page_ != RawDrawPageId::Settings;
+if (allow_status_widgets && weather_renderer_ && current_page_ != RawDrawPageId::Weather) {
     const int widget_w = weather_renderer_->RenderStatusBarWidget(
         fb, width, right_x, center_y, status_widget_budget);
     if (widget_w > 0) right_x -= widget_w + kStatusWidgetGap;
 }
-if (busy_light_renderer_ && current_page_ != RawDrawPageId::BusyLight) {
+if (allow_status_widgets && busy_light_renderer_ && current_page_ != RawDrawPageId::BusyLight) {
     const int widget_w = busy_light_renderer_->RenderStatusBarWidget(
         fb, width, right_x, center_y, status_widget_budget);
     if (widget_w > 0) right_x -= widget_w + kStatusWidgetGap;
@@ -67,7 +70,11 @@ Each widget that actually draws something shrinks `right_x`, which in turn
 shrinks `right_safe` (the boundary the centered title text is fitted/clamped
 against) — so widgets and the title never overlap, and multiple widgets can
 coexist by chaining right-to-left. A widget that returns 0 (no data yet, or
-doesn't fit in the budget) is simply skipped with no visual trace.
+doesn't fit in the budget) is simply skipped with no visual trace. For
+example, on the Gallery page (a third page that isn't either module's own),
+both the Weather and BusyLight widgets draw side by side, sharing the total
+width budget — there's no "who wins" contention, since neither module
+excludes the other, only its own active page.
 
 ### Contract for implementers
 

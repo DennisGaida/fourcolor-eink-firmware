@@ -51,7 +51,7 @@ the four-color e-ink screen.
 │                        AP + LAN photo transfer, and firmware/scripts/ build tooling
 ├── firmware/experiments/ Unfinished modules kept for reference, excluded from the build
 ├── server/              Optional Python bridge scripts (presence/calendar) + local dev tools
-└── docs/                Design docs and implementation notes (e.g. the LAN photo push API)
+└── docs/                Design docs and implementation notes (e.g. the LAN photo push API, serial remote control)
 ```
 
 ## Presence/Calendar Bridge (Busy Light)
@@ -104,7 +104,13 @@ dev/debug helpers, none of which need to run for normal device operation:
 - `mock_presence_server.py` — a fake `/live`+`/calendar/today` HTTP server for
   exercising the busy-light page without real Home Assistant/calendar
   credentials.
-- `press_button.py`, `screenshot.py` — local hardware test helpers.
+- `press_button.py`, `screenshot.py` — local hardware test helpers over the
+  LAN debug HTTP endpoints (`/button`, `/screenshot` — opt-in, requires `LAN
+  Service` enabled in Settings).
+- `serial_tool.py` — same screenshot/button-press operations, plus page
+  switching, but over the serial/USB port used for flashing — works even
+  when the LAN HTTP server is off. See
+  [`docs/serial-control.md`](docs/serial-control.md).
 - `mock_client.py` — a WebSocket client for a voice/LLM/TTS backend that no
   longer exists in this repo (it was written against an old `llmserve.py`
   service). It's only useful again if the `chat` experiment (see

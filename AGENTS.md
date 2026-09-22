@@ -21,6 +21,25 @@ Flash (adjust COM port):
 idf.py -p COM9 flash
 ```
 
+## Verifying changes after flashing — use serial remote control, not eyeballing the board
+
+After flashing, don't just stare at the physical screen or fumble with the
+buttons by hand — the firmware exposes a serial command interface over the
+same COM port used for flashing, so you can drive the device programmatically:
+
+```powershell
+python server\serial_tool.py COM9 screenshot check.png   # grab a PNG of the current framebuffer
+python server\serial_tool.py COM9 button boot_click      # inject a synthetic button press
+python server\serial_tool.py COM9 page weather           # jump straight to a page (busylight/weather/gallery/settings)
+```
+
+Then `view` the saved PNG to confirm the result of your change instead of
+guessing. Requires `pip install pyserial pillow`. Full protocol/wire-format
+details and gotchas (notably: the device can take ~20-30s to finish booting
+before commands work, and a page/button command that triggers an e-ink
+refresh can take up to ~120s to settle before a follow-up screenshot shows
+the final frame) are in [`docs/serial-control.md`](docs/serial-control.md).
+
 Fresh clone/worktree one-time setup — `firmware/sdkconfig` is gitignored, so a
 new checkout defaults to the wrong chip target:
 
@@ -67,7 +86,8 @@ idf.py build
   code to clean up.
 - `server/` — optional Python presence/calendar bridge + a few local
   dev/debug scripts, not required for normal device operation.
-- `docs/` — design docs (LAN photo push API, weather, busy-light).
+- `docs/` — design docs (LAN photo push API, weather, busy-light, serial
+  remote control).
 
 ## Commit messages
 
