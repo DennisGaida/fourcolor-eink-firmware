@@ -168,6 +168,11 @@ static bool ParseCalendarJson(const char* json, PresenceStatus* out) {
             const int32_t start_min = ParseHhMm(cJSON_IsString(start) ? start->valuestring : nullptr);
             const int32_t end_min = ParseHhMm(cJSON_IsString(end) ? end->valuestring : nullptr);
             if (start_min < 0 || end_min < 0) continue;
+            // Zero/negative-duration entries are all-day placeholders (e.g.
+            // birthday reminders) encoded with a bogus "start"=="end"
+            // timestamp rather than real meetings — skip them so they can't
+            // masquerade as a scheduled event.
+            if (end_min <= start_min) continue;
 
             PresenceEvent ev;
             ev.start_minutes = start_min;
@@ -210,8 +215,14 @@ static bool ParseCalendarJson(const char* json, PresenceStatus* out) {
                 cJSON* item = nullptr;
                 cJSON_ArrayForEach(item, tomorrow_events) {
                     cJSON* start = cJSON_GetObjectItem(item, "start");
+                    cJSON* end = cJSON_GetObjectItem(item, "end");
                     const int32_t start_min = ParseHhMm(cJSON_IsString(start) ? start->valuestring : nullptr);
+                    const int32_t end_min = ParseHhMm(cJSON_IsString(end) ? end->valuestring : nullptr);
                     if (start_min < 0) continue;
+                    // Same all-day-placeholder filter as today's loop above
+                    // (e.g. a birthday reminder at "02:00"-"02:00") so it
+                    // can't be picked as tomorrow's earliest "meeting".
+                    if (end_min >= 0 && end_min <= start_min) continue;
                     if (earliest < 0 || start_min < earliest) earliest = start_min;
                 }
             }
